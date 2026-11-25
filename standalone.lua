@@ -50,7 +50,22 @@ end
 return nil
 end
 
-local function isTeammate(player)
+local function getCustomTeamTag(instance)
+if not instance then return nil end
+local attrTeam = instance:GetAttribute("Team") or instance:GetAttribute("TeamName")
+if attrTeam ~= nil then return tostring(attrTeam) end
+local parent = instance.Parent
+while parent and parent ~= workspace do
+local nameLower = string.lower(parent.Name)
+if string.find(nameLower, "team") or string.find(nameLower, "red") or string.find(nameLower, "blue") or string.find(nameLower, "green") then
+return parent.Name
+end
+parent = parent.Parent
+end
+return nil
+end
+
+local function isTeammate(player, model)
 if not player or player == LocalPlayer then return false end
 if LocalPlayer.Team ~= nil and player.Team ~= nil then
 return player.Team == LocalPlayer.Team
@@ -58,15 +73,33 @@ end
 if not LocalPlayer.Neutral and not player.Neutral then
 return player.TeamColor == LocalPlayer.TeamColor
 end
+local myChar = LocalPlayer.Character
+local myTag = getCustomTeamTag(myChar) or getCustomTeamTag(LocalPlayer)
+local theirTag = getCustomTeamTag(model) or getCustomTeamTag(player)
+if myTag and theirTag then
+return myTag == theirTag
+end
 return false
 end
 
-local function getTagColor(player)
-if isTeammate(player) then
+local function getTagColor(player, model)
+if isTeammate(player, model) then
 return Color3.fromRGB(60, 255, 110)
 else
 return Color3.fromRGB(255, 65, 65)
 end
+end
+
+local function cleanupModel(model)
+local gui = Hub.ActiveGuis[model]
+if gui and gui.Parent then gui:Destroy() end
+Hub.ActiveGuis[model] = nil
+
+local hl = Hub.ActiveHighlights[model]
+if hl and hl.Parent then hl:Destroy() end
+Hub.ActiveHighlights[model] = nil
+
+Hub.TrackedModels[model] = nil
 end
 
 local function attachVisualsToModel(model)
@@ -78,9 +111,8 @@ local head = model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BaseP
 if not hum or not head then return end
 
 local plr = getPlayerFromModel(model)
-local friendly = isTeammate(plr)
+local friendly = isTeammate(plr, model)
 
--- 1. โครงสีแดงเห็นทั้งตัว (Highlight) สำหรับฝ่ายตรงข้าม/ศัตรู
 local existingHl = Hub.ActiveHighlights[model]
 if friendly then
 if existingHl and existingHl.Parent then existingHl:Destroy() end
@@ -102,11 +134,12 @@ hl.Parent = model
 Hub.ActiveHighlights[model] = hl
 existingHl = hl
 end
+if existingHl.Adornee ~= model then
 existingHl.Adornee = model
+end
 existingHl.Enabled = Hub.RedOutlineEnabled
 end
 
--- 2. ป้ายชื่อเหนือตัวละครแยกสี (ทีมเขียว / ศัตรูแดง)
 local existingGui = Hub.ActiveGuis[model]
 if not existingGui or not existingGui.Parent then
 local oldTag = head:FindFirstChild("MapNametag")
@@ -136,28 +169,29 @@ Hub.ActiveGuis[model] = billboard
 existingGui = billboard
 end
 
+if existingGui.Adornee ~= head then
 existingGui.Adornee = head
+end
 existingGui.Enabled = Hub.NametagsEnabled
 local lbl = existingGui:FindFirstChild("PlayerName")
 if lbl then
-lbl.TextColor3 = getTagColor(plr)
+lbl.TextColor3 = getTagColor(plr, model)
 end
 
 Hub.TrackedModels[model] = true
 end
 
-local function scanAndRefreshAll()
-for model, gui in pairs(Hub.ActiveGuis) do
-if not model or not model.Parent or not gui or not gui.Parent then
-if gui and gui.Parent then gui:Destroy() end
-Hub.ActiveGuis[model] = nil
-local hl = Hub.ActiveHighlights[model]
-if hl and hl.Parent then hl:Destroy() end
-Hub.ActiveHighlights[model] = nil
-Hub.TrackedModels[model] = nil
+local function refreshAllTracked()
+for model in pairs(Hub.TrackedModels) do
+if not model or not model.Parent or not model:FindFirstChildOfClass("Humanoid") then
+cleanupModel(model)
+else
+attachVisualsToModel(model)
+end
 end
 end
 
+local function scanInitialModels()
 for _, plr in ipairs(Players:GetPlayers()) do
 if plr ~= LocalPlayer and plr.Character then
 attachVisualsToModel(plr.Character)
@@ -176,22 +210,53 @@ end
 
 function Hub.SetRedOutline(state)
 Hub.RedOutlineEnabled = state == true
-scanAndRefreshAll()
+refreshAllTracked()
 end
 
 function Hub.SetNametags(state)
 Hub.NametagsEnabled = state == true
-scanAndRefreshAll()
+refreshAllTracked()
 end
 
-task.spawn(function()
-while true do
-scanAndRefreshAll()
-task.wait(1)
+workspace.DescendantAdded:Connect(function(desc)
+if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
+task.defer(attachVisualsToModel, desc.Parent)
 end
 end)
 
--- ระบบล็อกเป้า
+workspace.DescendantRemoving:Connect(function(desc)
+if desc:IsA("Model") and Hub.TrackedModels[desc] then
+cleanupModel(desc)
+elseif desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") and Hub.TrackedModels[desc.Parent] then
+cleanupModel(desc.Parent)
+end
+end)
+
+for _, plr in ipairs(Players:GetPlayers()) do
+if plr ~= LocalPlayer then
+plr.CharacterAdded:Connect(function(char)
+task.defer(attachVisualsToModel, char)
+end)
+plr:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked)
+plr:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked)
+end
+end
+
+Players.PlayerAdded:Connect(function(plr)
+if plr ~= LocalPlayer then
+plr.CharacterAdded:Connect(function(char)
+task.defer(attachVisualsToModel, char)
+end)
+plr:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked)
+plr:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked)
+end
+end)
+
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked)
+LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked)
+
+scanInitialModels()
+
 local lockConn = nil
 local lockToggleController = nil
 
@@ -203,10 +268,10 @@ if not root then return nil end
 local nearestPart = nil
 local shortestDist = Hub.MaxLockDistance
 
-for model, _ in pairs(Hub.TrackedModels) do
+for model in pairs(Hub.TrackedModels) do
 if model and model.Parent and not isOwnCharacter(model) and not isIgnoredContainer(model) then
 local plr = getPlayerFromModel(model)
-if not isTeammate(plr) then
+if not isTeammate(plr, model) then
 local hum = model:FindFirstChildOfClass("Humanoid")
 local aimPart = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
 if hum and hum.Health > 0 and aimPart then
@@ -254,7 +319,6 @@ end
 end
 end
 
--- UI 3D Dark Red + ปุ่มเปิด/ปิด/ซ่อน UI + ปลดล็อกเมาส์ขณะเปิดหน้าต่าง
 local function makeDraggable(dragHandle, targetFrame)
 local dragging = false
 local dragInput = nil
@@ -355,7 +419,6 @@ fovStroke.Color = Color3.fromRGB(255, 70, 90)
 fovStroke.Thickness = 1.6
 fovStroke.Transparency = 0.25
 
--- ปุ่มเปิด/ปิด/ซ่อน UI ด้านบนซ้าย (กดได้ทันที)
 local toggleUiBtn = Instance.new("TextButton")
 toggleUiBtn.Name = "ToggleMenuButton"
 toggleUiBtn.Size = UDim2.new(0, 110, 0, 36)
@@ -366,6 +429,7 @@ toggleUiBtn.TextColor3 = Color3.fromRGB(255, 240, 240)
 toggleUiBtn.Font = Enum.Font.GothamBlack
 toggleUiBtn.TextSize = 14
 toggleUiBtn.Active = true
+toggleUiBtn.Modal = true
 toggleUiBtn.AutoButtonColor = false
 toggleUiBtn.ZIndex = 40
 toggleUiBtn.Parent = screenGui
@@ -384,6 +448,7 @@ miniBtn.TextColor3 = Color3.fromRGB(255, 235, 235)
 miniBtn.Font = Enum.Font.GothamBlack
 miniBtn.TextSize = 18
 miniBtn.Active = true
+miniBtn.Modal = true
 miniBtn.AutoButtonColor = false
 miniBtn.ZIndex = 30
 miniBtn.Parent = screenGui
@@ -476,6 +541,7 @@ hideBtn.TextColor3 = Color3.fromRGB(255, 190, 190)
 hideBtn.Font = Enum.Font.GothamBold
 hideBtn.TextSize = 12
 hideBtn.Active = true
+hideBtn.Modal = true
 hideBtn.ZIndex = 15
 hideBtn.Parent = header
 Instance.new("UICorner", hideBtn).CornerRadius = UDim.new(0, 8)
@@ -515,21 +581,13 @@ local function setPanelVisible(visible)
 mainFrame.Visible = visible
 shadowFrame.Visible = visible
 toggleUiBtn.Text = visible and "ซ่อน UI" or "เปิด UI"
+toggleUiBtn.Modal = visible
+miniBtn.Modal = visible
+hideBtn.Modal = visible
 if visible then
-UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 UserInputService.MouseIconEnabled = true
 end
 end
-
--- ปลดล็อกเคอร์เซอร์เมาส์ตลอดเวลาที่เมนูเปิดอยู่ เพื่อให้ชี้กดปุ่มได้จริงในเกม FPS
-RunService.RenderStepped:Connect(function()
-if mainFrame.Visible then
-if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
-UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-end
-UserInputService.MouseIconEnabled = true
-end
-end)
 
 hideBtn.MouseButton1Click:Connect(function()
 setPanelVisible(false)
@@ -596,6 +654,7 @@ switchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 switchBtn.Font = Enum.Font.GothamBlack
 switchBtn.TextSize = 12
 switchBtn.Active = true
+switchBtn.Modal = true
 switchBtn.AutoButtonColor = false
 switchBtn.ZIndex = 20
 switchBtn.Parent = row
@@ -633,21 +692,36 @@ SetSilent = function(newState)
 state = newState == true
 refreshVisual(true)
 end,
+SetModal = function(isModal)
+switchBtn.Modal = isModal == true
+end,
 }
 end
 
-addToggle("โครงศัตรูสีแดง (Red Outline)", true, function(enabled)
+local controllers = {}
+table.insert(controllers, addToggle("โครงศัตรูสีแดง (Red Outline)", true, function(enabled)
 Hub.SetRedOutline(enabled)
-end)
+end))
 
-addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศัตรูแดง)", true, function(enabled)
+table.insert(controllers, addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศัตรูแดง)", true, function(enabled)
 Hub.SetNametags(enabled)
-end)
+end))
 
 lockToggleController = addToggle("ล็อกเป้า (คลิกขวา / ปุ่มนี้)", false, function(enabled)
 Hub.SetLockOn(enabled)
 end)
+table.insert(controllers, lockToggleController)
 
-addToggle("แสดงวงเล็ง FOV Ring", false, function(enabled)
+table.insert(controllers, addToggle("แสดงวงเล็ง FOV Ring", false, function(enabled)
 fovRing.Visible = enabled
-end)
+end))
+
+local origSetPanelVisible = setPanelVisible
+setPanelVisible = function(visible)
+origSetPanelVisible(visible)
+for _, ctrl in ipairs(controllers) do
+if ctrl and ctrl.SetModal then
+ctrl.SetModal(visible)
+end
+end
+end
