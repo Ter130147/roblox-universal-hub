@@ -49,7 +49,6 @@ end
 end
 end
 
--- 1. ระบบป้ายชื่อทั้งแมพแยกสีทีม (ทีมเขียว / ศัตรูแดง)
 local function createNametag(player, character)
 if player == LocalPlayer then return end
 local head = character:WaitForChild("Head", 5)
@@ -130,7 +129,6 @@ end
 Hub.ActiveGuis[plr] = nil
 end)
 
--- 2. ระบบล็อกเป้า (รองรับผู้เล่นต่างทีมและ NPC ในโฟลเดอร์ Enemies)
 local lockConn = nil
 local lockToggleController = nil
 
@@ -216,7 +214,6 @@ end
 end
 end)
 
--- 3. UI 3D Dark Red + เอฟเฟกต์แสงกวาด
 local function makeDraggable(dragHandle, targetFrame)
 local dragging = false
 local dragInput = nil
@@ -299,7 +296,6 @@ screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = PlayerGui
 
--- วงแหวน FOV Ring บนหน้าจอ
 local fovRing = Instance.new("Frame")
 fovRing.Name = "FOVCircleRing"
 fovRing.AnchorPoint = Vector2.new(0.5, 0.5)
