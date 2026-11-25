@@ -13,11 +13,43 @@ Hub.LockOnEnabled = false
 Hub.CurrentTarget = nil
 Hub.ActiveGuis = {}
 Hub.Connections = {}
-Hub.MaxLockDistance = 80
-Hub.LockSmoothness = 0.2
+Hub.MaxLockDistance = 120
+Hub.LockSmoothness = 0.22
 Hub.TargetFolderName = "Enemies"
 
--- 1. ระบบป้ายชื่อทั้งแมพ (Nametags)
+-- เช็กว่าเป็นเพื่อนร่วมทีมเดียวกันหรือไม่
+local function isTeammate(player)
+if not player or player == LocalPlayer then return true end
+if LocalPlayer.Team ~= nil and player.Team ~= nil then
+return player.Team == LocalPlayer.Team
+end
+if not LocalPlayer.Neutral and not player.Neutral then
+return player.TeamColor == LocalPlayer.TeamColor
+end
+return false
+end
+
+-- คืนค่าสีตามฝ่าย: ทีมตัวเอง = สีเขียว, ศัตรู = สีแดง
+local function getTagColor(player)
+if isTeammate(player) then
+return Color3.fromRGB(60, 255, 110)
+else
+return Color3.fromRGB(255, 65, 65)
+end
+end
+
+local function refreshAllTagColors()
+for player, gui in pairs(Hub.ActiveGuis) do
+if gui and gui.Parent then
+local label = gui:FindFirstChild("PlayerName")
+if label then
+label.TextColor3 = getTagColor(player)
+end
+end
+end
+end
+
+-- 1. ระบบป้ายชื่อทั้งแมพแยกสีทีม (Nametags)
 local function createNametag(player, character)
 if player == LocalPlayer then return end
 local head = character:WaitForChild("Head", 5)
@@ -29,10 +61,10 @@ if old then old:Destroy() end
 local billboard = Instance.new("BillboardGui")
 billboard.Name = "MapNametag"
 billboard.Adornee = head
-billboard.Size = UDim2.new(0, 160, 0, 36)
-billboard.StudsOffset = Vector3.new(0, 2.5, 0)
+billboard.Size = UDim2.new(0, 170, 0, 38)
+billboard.StudsOffset = Vector3.new(0, 2.6, 0)
 billboard.AlwaysOnTop = true
-billboard.MaxDistance = 1000
+billboard.MaxDistance = 1200
 billboard.Enabled = Hub.NametagsEnabled
 billboard.Parent = head
 
@@ -41,10 +73,10 @@ label.Name = "PlayerName"
 label.Size = UDim2.new(1, 0, 1, 0)
 label.BackgroundTransparency = 1
 label.Text = player.DisplayName .. " (@" .. player.Name .. ")"
-label.TextColor3 = Color3.fromRGB(255, 255, 255)
-label.TextStrokeTransparency = 0.2
+label.TextColor3 = getTagColor(player)
+label.TextStrokeTransparency = 0.15
 label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-label.Font = Enum.Font.GothamBold
+label.Font = Enum.Font.GothamBlack
 label.TextScaled = true
 label.Parent = billboard
 
@@ -56,13 +88,24 @@ if player == LocalPlayer then return end
 if player.Character then
 task.spawn(createNametag, player, player.Character)
 end
+
 if Hub.Connections[player] then
-Hub.Connections[player]:Disconnect()
+for _, conn in ipairs(Hub.Connections[player]) do
+conn:Disconnect()
 end
-Hub.Connections[player] = player.CharacterAdded:Connect(function(character)
+end
+
+Hub.Connections[player] = {
+player.CharacterAdded:Connect(function(character)
 createNametag(player, character)
-end)
+end),
+player:GetPropertyChangedSignal("Team"):Connect(refreshAllTagColors),
+player:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTagColors),
+}
 end
+
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(refreshAllTagColors)
+LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTagColors)
 
 function Hub.SetNametags(state)
 Hub.NametagsEnabled = state == true
@@ -79,26 +122,44 @@ end
 Players.PlayerAdded:Connect(bindPlayerTag)
 Players.PlayerRemoving:Connect(function(plr)
 if Hub.Connections[plr] then
-Hub.Connections[plr]:Disconnect()
+for _, conn in ipairs(Hub.Connections[plr]) do
+conn:Disconnect()
+end
 Hub.Connections[plr] = nil
 end
 Hub.ActiveGuis[plr] = nil
 end)
 
--- 2. ระบบล็อกเป้าศัตรู (Lock-On)
+-- 2. ระบบล็อกเป้าศัตรู (รองรับทั้งผู้เล่นต่างทีม และ NPC ใน Enemies)
 local lockConn = nil
+local lockToggleController = nil
 
 local function getNearestEnemy()
 local char = LocalPlayer.Character
 local root = char and char:FindFirstChild("HumanoidRootPart")
 if not root then return nil end
 
-local enemiesFolder = workspace:FindFirstChild(Hub.TargetFolderName)
-if not enemiesFolder then return nil end
-
-local nearestRoot = nil
+local nearestPart = nil
 local shortestDist = Hub.MaxLockDistance
 
+-- ค้นหาผู้เล่นฝั่งศัตรู (ไม่ใช่ทีมเดียวกัน)
+for _, plr in ipairs(Players:GetPlayers()) do
+if plr ~= LocalPlayer and not isTeammate(plr) and plr.Character then
+local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+local targetPart = plr.Character:FindFirstChild("HumanoidRootPart")
+if hum and hum.Health > 0 and targetPart then
+local dist = (targetPart.Position - root.Position).Magnitude
+if dist < shortestDist then
+shortestDist = dist
+nearestPart = targetPart
+end
+end
+end
+end
+
+-- ค้นหา NPC/มอนสเตอร์ในโฟลเดอร์ Enemies (ถ้ามี)
+local enemiesFolder = workspace:FindFirstChild(Hub.TargetFolderName)
+if enemiesFolder then
 for _, npc in ipairs(enemiesFolder:GetChildren()) do
 local hum = npc:FindFirstChildOfClass("Humanoid")
 local npcRoot = npc:FindFirstChild("HumanoidRootPart")
@@ -106,11 +167,13 @@ if hum and hum.Health > 0 and npcRoot then
 local dist = (npcRoot.Position - root.Position).Magnitude
 if dist < shortestDist then
 shortestDist = dist
-nearestRoot = npcRoot
+nearestPart = npcRoot
 end
 end
 end
-return nearestRoot
+end
+
+return nearestPart
 end
 
 function Hub.SetLockOn(state)
@@ -119,6 +182,7 @@ if Hub.LockOnEnabled then
 Hub.CurrentTarget = getNearestEnemy()
 if not Hub.CurrentTarget then
 Hub.LockOnEnabled = false
+if lockToggleController then lockToggleController.SetSilent(false) end
 return
 end
 if lockConn then lockConn:Disconnect() end
@@ -127,6 +191,7 @@ local target = Hub.CurrentTarget
 local targetHum = target and target.Parent and target.Parent:FindFirstChildOfClass("Humanoid")
 if not target or not target.Parent or not targetHum or targetHum.Health <= 0 then
 Hub.SetLockOn(false)
+if lockToggleController then lockToggleController.SetSilent(false) end
 return
 end
 local camPos = Camera.CFrame.Position
@@ -142,10 +207,15 @@ end
 end
 end
 
+-- กดคลิกขวาเพื่อเปิด/ปิด Lock-On ได้ทันที
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 if gameProcessed then return end
-if input.UserInputType == Enum.UserInputType.MouseButton2 and Hub.LockOnEnabled then
-Hub.SetLockOn(false)
+if input.UserInputType == Enum.UserInputType.MouseButton2 then
+local nextState = not Hub.LockOnEnabled
+Hub.SetLockOn(nextState)
+if lockToggleController then
+lockToggleController.SetSilent(Hub.LockOnEnabled)
+end
 end
 end)
 
@@ -260,8 +330,8 @@ applySweepEffect(miniBtn)
 
 local shadowFrame = Instance.new("Frame")
 shadowFrame.Name = "MainShadow3D"
-shadowFrame.Size = UDim2.new(0, 330, 0, 260)
-shadowFrame.Position = UDim2.new(0.5, -159, 0.5, -122)
+shadowFrame.Size = UDim2.new(0, 340, 0, 260)
+shadowFrame.Position = UDim2.new(0.5, -164, 0.5, -122)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
 shadowFrame.ZIndex = 4
@@ -270,8 +340,8 @@ Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainPanel3D"
-mainFrame.Size = UDim2.new(0, 330, 0, 260)
-mainFrame.Position = UDim2.new(0.5, -165, 0.5, -130)
+mainFrame.Size = UDim2.new(0, 340, 0, 260)
+mainFrame.Position = UDim2.new(0.5, -170, 0.5, -130)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = true
@@ -400,7 +470,7 @@ label.Text = labelText
 label.TextColor3 = Color3.fromRGB(245, 235, 235)
 label.TextXAlignment = Enum.TextXAlignment.Left
 label.Font = Enum.Font.GothamBold
-label.TextSize = 14
+label.TextSize = 13
 label.ZIndex = 10
 label.Parent = row
 
@@ -443,12 +513,19 @@ refreshVisual(false)
 if state and callback then
 task.spawn(callback, true)
 end
+
+return {
+SetSilent = function(newState)
+state = newState == true
+refreshVisual(true)
+end,
+}
 end
 
-addToggle("แสดงชื่อทั้งแมพ (Nametags)", true, function(enabled)
+addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศัตรูแดง)", true, function(enabled)
 Hub.SetNametags(enabled)
 end)
 
-addToggle("ล็อกเป้าศัตรู (Lock-On)", false, function(enabled)
+lockToggleController = addToggle("ล็อกเป้า (คลิกขวา / ปุ่มนี้)", false, function(enabled)
 Hub.SetLockOn(enabled)
 end)
