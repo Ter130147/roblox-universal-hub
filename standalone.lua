@@ -9,10 +9,12 @@ local Camera = workspace.CurrentCamera
 
 local Hub = {}
 Hub.NametagsEnabled = true
+Hub.RedOutlineEnabled = true
 Hub.LockOnEnabled = false
 Hub.FOVEnabled = false
 Hub.CurrentTarget = nil
 Hub.ActiveGuis = {}
+Hub.ActiveHighlights = {}
 Hub.Connections = {}
 Hub.MaxLockDistance = 120
 Hub.LockSmoothness = 0.22
@@ -49,9 +51,61 @@ end
 end
 end
 
+-- สร้างโครงสีแดง (Highlight) ให้เห็นทั้งตัวทะลุฉากสำหรับฝ่ายตรงข้าม/ศัตรู
+local function applyEnemyHighlight(player, character)
+if not player or player == LocalPlayer or not character then return end
+
+local oldHl = character:FindFirstChild("EnemyRedOutline")
+if oldHl then oldHl:Destroy() end
+
+if isTeammate(player) then
+Hub.ActiveHighlights[player] = nil
+return
+end
+
+local hl = Instance.new("Highlight")
+hl.Name = "EnemyRedOutline"
+hl.Adornee = character
+hl.FillColor = Color3.fromRGB(255, 35, 35)
+hl.FillTransparency = 0.72
+hl.OutlineColor = Color3.fromRGB(255, 65, 65)
+hl.OutlineTransparency = 0
+hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+hl.Enabled = Hub.RedOutlineEnabled
+hl.Parent = character
+
+Hub.ActiveHighlights[player] = hl
+end
+
+local function refreshHighlights()
+for _, plr in ipairs(Players:GetPlayers()) do
+if plr ~= LocalPlayer and plr.Character then
+if isTeammate(plr) then
+local oldHl = plr.Character:FindFirstChild("EnemyRedOutline")
+if oldHl then oldHl:Destroy() end
+Hub.ActiveHighlights[plr] = nil
+else
+applyEnemyHighlight(plr, plr.Character)
+end
+end
+end
+
+for plr, hl in pairs(Hub.ActiveHighlights) do
+if hl and hl.Parent then
+hl.Enabled = Hub.RedOutlineEnabled and (not isTeammate(plr))
+end
+end
+end
+
+function Hub.SetRedOutline(state)
+Hub.RedOutlineEnabled = state == true
+refreshHighlights()
+end
+
+-- 1. ระบบป้ายชื่อทั้งแมพแยกสีทีม (ทีมเขียว / ศัตรูแดง)
 local function createNametag(player, character)
-if player == LocalPlayer then return end
-local head = character:WaitForChild("Head", 5)
+if player == LocalPlayer or not character then return end
+local head = character:FindFirstChild("Head") or character:WaitForChild("Head", 5)
 if not head then return end
 
 local old = head:FindFirstChild("MapNametag")
@@ -60,10 +114,10 @@ if old then old:Destroy() end
 local billboard = Instance.new("BillboardGui")
 billboard.Name = "MapNametag"
 billboard.Adornee = head
-billboard.Size = UDim2.new(0, 170, 0, 38)
-billboard.StudsOffset = Vector3.new(0, 2.6, 0)
+billboard.Size = UDim2.new(0, 175, 0, 38)
+billboard.StudsOffset = Vector3.new(0, 2.7, 0)
 billboard.AlwaysOnTop = true
-billboard.MaxDistance = 1200
+billboard.MaxDistance = 1500
 billboard.Enabled = Hub.NametagsEnabled
 billboard.Parent = head
 
@@ -73,13 +127,14 @@ label.Size = UDim2.new(1, 0, 1, 0)
 label.BackgroundTransparency = 1
 label.Text = player.DisplayName .. " (@" .. player.Name .. ")"
 label.TextColor3 = getTagColor(player)
-label.TextStrokeTransparency = 0.15
+label.TextStrokeTransparency = 0.1
 label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 label.Font = Enum.Font.GothamBlack
 label.TextScaled = true
 label.Parent = billboard
 
 Hub.ActiveGuis[player] = billboard
+applyEnemyHighlight(player, character)
 end
 
 local function bindPlayerTag(player)
@@ -96,15 +151,27 @@ end
 
 Hub.Connections[player] = {
 player.CharacterAdded:Connect(function(character)
-createNametag(player, character)
+task.spawn(createNametag, player, character)
 end),
-player:GetPropertyChangedSignal("Team"):Connect(refreshAllTagColors),
-player:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTagColors),
+player:GetPropertyChangedSignal("Team"):Connect(function()
+refreshAllTagColors()
+refreshHighlights()
+end),
+player:GetPropertyChangedSignal("TeamColor"):Connect(function()
+refreshAllTagColors()
+refreshHighlights()
+end),
 }
 end
 
-LocalPlayer:GetPropertyChangedSignal("Team"):Connect(refreshAllTagColors)
-LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTagColors)
+LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
+refreshAllTagColors()
+refreshHighlights()
+end)
+LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(function()
+refreshAllTagColors()
+refreshHighlights()
+end)
 
 function Hub.SetNametags(state)
 Hub.NametagsEnabled = state == true
@@ -127,8 +194,10 @@ end
 Hub.Connections[plr] = nil
 end
 Hub.ActiveGuis[plr] = nil
+Hub.ActiveHighlights[plr] = nil
 end)
 
+-- 2. ระบบล็อกเป้า (รองรับผู้เล่นต่างทีมและ NPC ในโฟลเดอร์ Enemies)
 local lockConn = nil
 local lockToggleController = nil
 
@@ -203,6 +272,7 @@ end
 end
 end
 
+-- 3. UI 3D Dark Red + เอฟเฟกต์แสงกวาด
 local function makeDraggable(dragHandle, targetFrame)
 local dragging = false
 local dragInput = nil
@@ -332,8 +402,8 @@ applySweepEffect(miniBtn)
 
 local shadowFrame = Instance.new("Frame")
 shadowFrame.Name = "MainShadow3D"
-shadowFrame.Size = UDim2.new(0, 340, 0, 290)
-shadowFrame.Position = UDim2.new(0.5, -164, 0.5, -137)
+shadowFrame.Size = UDim2.new(0, 340, 0, 345)
+shadowFrame.Position = UDim2.new(0.5, -164, 0.5, -165)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
 shadowFrame.Active = false
@@ -343,8 +413,8 @@ Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainPanel3D"
-mainFrame.Size = UDim2.new(0, 340, 0, 290)
-mainFrame.Position = UDim2.new(0.5, -170, 0.5, -145)
+mainFrame.Size = UDim2.new(0, 340, 0, 345)
+mainFrame.Position = UDim2.new(0.5, -170, 0.5, -172)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = true
@@ -454,7 +524,7 @@ setPanelVisible(not mainFrame.Visible)
 end)
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-if input.KeyCode == Enum.KeyCode.Insert then
+if input.KeyCode == Enum.KeyCode.Insert or input.KeyCode == Enum.KeyCode.RightShift then
 setPanelVisible(not mainFrame.Visible)
 elseif not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton2 then
 local nextState = not Hub.LockOnEnabled
@@ -544,6 +614,10 @@ refreshVisual(true)
 end,
 }
 end
+
+addToggle("โครงศัตรูสีแดง (Red Outline)", true, function(enabled)
+Hub.SetRedOutline(enabled)
+end)
 
 addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศัตรูแดง)", true, function(enabled)
 Hub.SetNametags(enabled)
