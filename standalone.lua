@@ -2,7 +2,6 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
-local CombatHelper = require(script.Parent.modules.combat_helper)
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -11,14 +10,15 @@ local Camera = workspace.CurrentCamera
 local Hub = {}
 Hub.NametagsEnabled = true
 Hub.LockOnEnabled = false
+Hub.FOVEnabled = false
 Hub.CurrentTarget = nil
 Hub.ActiveGuis = {}
 Hub.Connections = {}
 Hub.MaxLockDistance = 120
 Hub.LockSmoothness = 0.22
 Hub.TargetFolderName = "Enemies"
+Hub.FOVRadius = 120
 
--- เช็กว่าเป็นเพื่อนร่วมทีมเดียวกันหรือไม่
 local function isTeammate(player)
 if not player or player == LocalPlayer then return true end
 if LocalPlayer.Team ~= nil and player.Team ~= nil then
@@ -30,7 +30,6 @@ end
 return false
 end
 
--- คืนค่าสีตามฝ่าย: ทีมตัวเอง = สีเขียว, ศัตรู = สีแดง
 local function getTagColor(player)
 if isTeammate(player) then
 return Color3.fromRGB(60, 255, 110)
@@ -50,7 +49,7 @@ end
 end
 end
 
--- 1. ระบบป้ายชื่อทั้งแมพแยกสีทีม (Nametags)
+-- 1. ระบบป้ายชื่อทั้งแมพแยกสีทีม (ทีมเขียว / ศัตรูแดง)
 local function createNametag(player, character)
 if player == LocalPlayer then return end
 local head = character:WaitForChild("Head", 5)
@@ -131,7 +130,7 @@ end
 Hub.ActiveGuis[plr] = nil
 end)
 
--- 2. ระบบล็อกเป้าศัตรู (รองรับทั้งผู้เล่นต่างทีม และ NPC ใน Enemies)
+-- 2. ระบบล็อกเป้า (รองรับผู้เล่นต่างทีมและ NPC ในโฟลเดอร์ Enemies)
 local lockConn = nil
 local lockToggleController = nil
 
@@ -143,7 +142,6 @@ if not root then return nil end
 local nearestPart = nil
 local shortestDist = Hub.MaxLockDistance
 
--- ค้นหาผู้เล่นฝั่งศัตรู (ไม่ใช่ทีมเดียวกัน)
 for _, plr in ipairs(Players:GetPlayers()) do
 if plr ~= LocalPlayer and not isTeammate(plr) and plr.Character then
 local hum = plr.Character:FindFirstChildOfClass("Humanoid")
@@ -158,7 +156,6 @@ end
 end
 end
 
--- ค้นหา NPC/มอนสเตอร์ในโฟลเดอร์ Enemies (ถ้ามี)
 local enemiesFolder = workspace:FindFirstChild(Hub.TargetFolderName)
 if enemiesFolder then
 for _, npc in ipairs(enemiesFolder:GetChildren()) do
@@ -208,7 +205,6 @@ end
 end
 end
 
--- กดคลิกขวาเพื่อเปิด/ปิด Lock-On ได้ทันที
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 if gameProcessed then return end
 if input.UserInputType == Enum.UserInputType.MouseButton2 then
@@ -303,6 +299,22 @@ screenGui.ResetOnSpawn = false
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = PlayerGui
 
+-- วงแหวน FOV Ring บนหน้าจอ
+local fovRing = Instance.new("Frame")
+fovRing.Name = "FOVCircleRing"
+fovRing.AnchorPoint = Vector2.new(0.5, 0.5)
+fovRing.Position = UDim2.new(0.5, 0, 0.5, 0)
+fovRing.Size = UDim2.new(0, Hub.FOVRadius * 2, 0, Hub.FOVRadius * 2)
+fovRing.BackgroundTransparency = 1
+fovRing.Visible = false
+fovRing.ZIndex = 15
+fovRing.Parent = screenGui
+Instance.new("UICorner", fovRing).CornerRadius = UDim.new(1, 0)
+local fovStroke = Instance.new("UIStroke", fovRing)
+fovStroke.Color = Color3.fromRGB(255, 70, 90)
+fovStroke.Thickness = 1.6
+fovStroke.Transparency = 0.25
+
 local miniBtn = Instance.new("TextButton")
 miniBtn.Name = "MiniToggle3D"
 miniBtn.Size = UDim2.new(0, 62, 0, 62)
@@ -331,8 +343,8 @@ applySweepEffect(miniBtn)
 
 local shadowFrame = Instance.new("Frame")
 shadowFrame.Name = "MainShadow3D"
-shadowFrame.Size = UDim2.new(0, 340, 0, 260)
-shadowFrame.Position = UDim2.new(0.5, -164, 0.5, -122)
+shadowFrame.Size = UDim2.new(0, 340, 0, 290)
+shadowFrame.Position = UDim2.new(0.5, -164, 0.5, -137)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
 shadowFrame.ZIndex = 4
@@ -341,8 +353,8 @@ Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainPanel3D"
-mainFrame.Size = UDim2.new(0, 340, 0, 260)
-mainFrame.Position = UDim2.new(0.5, -170, 0.5, -130)
+mainFrame.Size = UDim2.new(0, 340, 0, 290)
+mainFrame.Position = UDim2.new(0.5, -170, 0.5, -145)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = true
@@ -530,8 +542,7 @@ end)
 lockToggleController = addToggle("ล็อกเป้า (คลิกขวา / ปุ่มนี้)", false, function(enabled)
 Hub.SetLockOn(enabled)
 end)
--- 4. วงเล็ง FOV Ring บนหน้าจอ (สำหรับใช้ในแมพของตัวเอง)
-local fovRing = CombatHelper.CreateFOVCircle(screenGui, CombatHelper.FOVRadius)
-addToggle("แสดงวงเล็ง FOV (FOV Ring)", false, function(enabled)
+
+addToggle("แสดงวงเล็ง FOV Ring", false, function(enabled)
 fovRing.Visible = enabled
 end)
