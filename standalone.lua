@@ -11,26 +11,47 @@ local Hub = {}
 Hub.NametagsEnabled = true
 Hub.RedOutlineEnabled = true
 Hub.LockOnEnabled = false
-Hub.FOVEnabled = false
 Hub.CurrentTarget = nil
+Hub.TrackedModels = {}
 Hub.ActiveGuis = {}
 Hub.ActiveHighlights = {}
-Hub.Connections = {}
-Hub.MaxLockDistance = 150
-Hub.LockSmoothness = 0.22
+Hub.MaxLockDistance = 160
+Hub.LockSmoothness = 0.24
 Hub.FOVRadius = 120
 
-local function isIgnoredModel(model)
+local function isOwnCharacter(model)
 if not model then return true end
-local full = model:GetFullName()
-if string.find(full, "Workspace%.Highlight") then return true end
-if string.find(full, "Workspace%._Temp") then return true end
-if string.find(full, "Workspace%.Camera") then return true end
+if LocalPlayer.Character and (model == LocalPlayer.Character or model:IsDescendantOf(LocalPlayer.Character)) then
+return true
+end
+if model.Name == LocalPlayer.Name then
+return true
+end
 return false
 end
 
+local function isIgnoredContainer(model)
+if not model then return true end
+local full = model:GetFullName()
+if string.find(full, "Workspace%.Camera") then return true end
+if string.find(full, "Workspace%._Temp") then return true end
+if string.find(full, "HighlightHolder") then return true end
+return false
+end
+
+local function getPlayerFromModel(model)
+local plr = Players:GetPlayerFromCharacter(model)
+if plr then return plr end
+for _, p in ipairs(Players:GetPlayers()) do
+if p.Name == model.Name then
+return p
+end
+end
+return nil
+end
+
 local function isTeammate(player)
-if not player or player == LocalPlayer then return true end
+if not player or player == LocalPlayer then return false end
 if LocalPlayer.Team ~= nil and player.Team ~= nil then
 return player.Team == LocalPlayer.Team
 end
@@ -48,163 +69,129 @@ return Color3.fromRGB(255, 65, 65)
 end
 end
 
-local function refreshAllTagColors()
-for player, gui in pairs(Hub.ActiveGuis) do
-if gui and gui.Parent then
-local label = gui:FindFirstChild("PlayerName")
-if label then
-label.TextColor3 = getTagColor(player)
-end
-end
-end
-end
+local function attachVisualsToModel(model)
+if not model or not model:IsA("Model") then return end
+if isOwnCharacter(model) or isIgnoredContainer(model) then return end
 
-local function applyCharacterHighlight(player, character)
-if not player or player == LocalPlayer or not character or isIgnoredModel(character) then return end
+local hum = model:FindFirstChildOfClass("Humanoid")
+local head = model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BasePart")
+if not hum or not head then return end
 
-local oldHl = character:FindFirstChild("EnemyRedOutline")
+local plr = getPlayerFromModel(model)
+local friendly = isTeammate(plr)
+
+-- 1. โครงสีแดงเห็นทั้งตัว (Highlight) สำหรับฝ่ายตรงข้าม/ศัตรู
+local existingHl = Hub.ActiveHighlights[model]
+if friendly then
+if existingHl and existingHl.Parent then existingHl:Destroy() end
+Hub.ActiveHighlights[model] = nil
+else
+if not existingHl or not existingHl.Parent then
+local oldHl = model:FindFirstChild("EnemyRedOutline")
 if oldHl then oldHl:Destroy() end
-
-if isTeammate(player) then
-Hub.ActiveHighlights[player] = nil
-return
-end
 
 local hl = Instance.new("Highlight")
 hl.Name = "EnemyRedOutline"
-hl.Adornee = character
-hl.FillColor = Color3.fromRGB(255, 35, 35)
-hl.FillTransparency = 0.72
-hl.OutlineColor = Color3.fromRGB(255, 70, 70)
+hl.Adornee = model
+hl.FillColor = Color3.fromRGB(255, 30, 30)
+hl.FillTransparency = 0.68
+hl.OutlineColor = Color3.fromRGB(255, 80, 80)
 hl.OutlineTransparency = 0
 hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-hl.Enabled = Hub.RedOutlineEnabled
-hl.Parent = character
-
-Hub.ActiveHighlights[player] = hl
+hl.Parent = model
+Hub.ActiveHighlights[model] = hl
+existingHl = hl
+end
+existingHl.Adornee = model
+existingHl.Enabled = Hub.RedOutlineEnabled
 end
 
-local function refreshHighlights()
-for _, plr in ipairs(Players:GetPlayers()) do
-if plr ~= LocalPlayer and plr.Character then
-if isTeammate(plr) then
-local oldHl = plr.Character:FindFirstChild("EnemyRedOutline")
-if oldHl then oldHl:Destroy() end
-Hub.ActiveHighlights[plr] = nil
-else
-applyCharacterHighlight(plr, plr.Character)
-end
-end
-end
-
-for plr, hl in pairs(Hub.ActiveHighlights) do
-if hl and hl.Parent then
-hl.Enabled = Hub.RedOutlineEnabled and (not isTeammate(plr))
-end
-end
-end
-
-function Hub.SetRedOutline(state)
-Hub.RedOutlineEnabled = state == true
-refreshHighlights()
-end
-
--- 1. ระบบป้ายชื่อทั้งแมพแยกสีทีม (ทีมเขียว / ศัตรูแดง)
-local function createNametag(player, character)
-if player == LocalPlayer or not character or isIgnoredModel(character) then return end
-local head = character:FindFirstChild("Head") or character:WaitForChild("Head", 5)
-if not head then return end
-
-local old = head:FindFirstChild("MapNametag")
-if old then old:Destroy() end
+-- 2. ป้ายชื่อเหนือตัวละครแยกสี (ทีมเขียว / ศัตรูแดง)
+local existingGui = Hub.ActiveGuis[model]
+if not existingGui or not existingGui.Parent then
+local oldTag = head:FindFirstChild("MapNametag")
+if oldTag then oldTag:Destroy() end
 
 local billboard = Instance.new("BillboardGui")
 billboard.Name = "MapNametag"
 billboard.Adornee = head
-billboard.Size = UDim2.new(0, 175, 0, 38)
-billboard.StudsOffset = Vector3.new(0, 2.7, 0)
+billboard.Size = UDim2.new(0, 175, 0, 36)
+billboard.StudsOffset = Vector3.new(0, 2.6, 0)
 billboard.AlwaysOnTop = true
-billboard.MaxDistance = 2000
-billboard.Enabled = Hub.NametagsEnabled
+billboard.MaxDistance = 2500
 billboard.Parent = head
 
 local label = Instance.new("TextLabel")
 label.Name = "PlayerName"
 label.Size = UDim2.new(1, 0, 1, 0)
 label.BackgroundTransparency = 1
-label.Text = player.DisplayName .. " (@" .. player.Name .. ")"
-label.TextColor3 = getTagColor(player)
+label.Text = plr and (plr.DisplayName .. " (@" .. plr.Name .. ")") or model.Name
 label.TextStrokeTransparency = 0.1
 label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 label.Font = Enum.Font.GothamBlack
 label.TextScaled = true
 label.Parent = billboard
 
-Hub.ActiveGuis[player] = billboard
-applyCharacterHighlight(player, character)
+Hub.ActiveGuis[model] = billboard
+existingGui = billboard
 end
 
-local function bindPlayerTag(player)
-if player == LocalPlayer then return end
-if player.Character then
-task.spawn(createNametag, player, player.Character)
+existingGui.Adornee = head
+existingGui.Enabled = Hub.NametagsEnabled
+local lbl = existingGui:FindFirstChild("PlayerName")
+if lbl then
+lbl.TextColor3 = getTagColor(plr)
 end
 
-if Hub.Connections[player] then
-for _, conn in ipairs(Hub.Connections[player]) do
-conn:Disconnect()
-end
+Hub.TrackedModels[model] = true
 end
 
-Hub.Connections[player] = {
-player.CharacterAdded:Connect(function(character)
-task.spawn(createNametag, player, character)
-end),
-player:GetPropertyChangedSignal("Team"):Connect(function()
-refreshAllTagColors()
-refreshHighlights()
-end),
-player:GetPropertyChangedSignal("TeamColor"):Connect(function()
-refreshAllTagColors()
-refreshHighlights()
-end),
-}
-end
-
-LocalPlayer:GetPropertyChangedSignal("Team"):Connect(function()
-refreshAllTagColors()
-refreshHighlights()
-end)
-LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(function()
-refreshAllTagColors()
-refreshHighlights()
-end)
-
-function Hub.SetNametags(state)
-Hub.NametagsEnabled = state == true
-for _, gui in pairs(Hub.ActiveGuis) do
-if gui and gui.Parent then
-gui.Enabled = Hub.NametagsEnabled
-end
+local function scanAndRefreshAll()
+for model, gui in pairs(Hub.ActiveGuis) do
+if not model or not model.Parent or not gui or not gui.Parent then
+if gui and gui.Parent then gui:Destroy() end
+Hub.ActiveGuis[model] = nil
+local hl = Hub.ActiveHighlights[model]
+if hl and hl.Parent then hl:Destroy() end
+Hub.ActiveHighlights[model] = nil
+Hub.TrackedModels[model] = nil
 end
 end
 
 for _, plr in ipairs(Players:GetPlayers()) do
-bindPlayerTag(plr)
+if plr ~= LocalPlayer and plr.Character then
+attachVisualsToModel(plr.Character)
 end
-Players.PlayerAdded:Connect(bindPlayerTag)
-Players.PlayerRemoving:Connect(function(plr)
-if Hub.Connections[plr] then
-for _, conn in ipairs(Hub.Connections[plr]) do
-conn:Disconnect()
 end
-Hub.Connections[plr] = nil
+
+local worldFolder = workspace:FindFirstChild("World")
+if worldFolder then
+for _, desc in ipairs(worldFolder:GetDescendants()) do
+if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
+attachVisualsToModel(desc.Parent)
 end
-Hub.ActiveGuis[plr] = nil
-Hub.ActiveHighlights[plr] = nil
+end
+end
+end
+
+function Hub.SetRedOutline(state)
+Hub.RedOutlineEnabled = state == true
+scanAndRefreshAll()
+end
+
+function Hub.SetNametags(state)
+Hub.NametagsEnabled = state == true
+scanAndRefreshAll()
+end
+
+task.spawn(function()
+while true do
+scanAndRefreshAll()
+task.wait(1)
+end
 end)
 
--- 2. ระบบล็อกเป้า (เจาะผู้เล่นใน Workspace และ Entities ใน Workspace.World โดยข้าม Highlight/_Temp)
+-- ระบบล็อกเป้า
 local lockConn = nil
 local lockToggleController = nil
 
@@ -216,33 +203,17 @@ if not root then return nil end
 local nearestPart = nil
 local shortestDist = Hub.MaxLockDistance
 
-for _, plr in ipairs(Players:GetPlayers()) do
-if plr ~= LocalPlayer and not isTeammate(plr) and plr.Character and not isIgnoredModel(plr.Character) then
-local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-local targetPart = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
-if hum and hum.Health > 0 and targetPart then
-local dist = (targetPart.Position - root.Position).Magnitude
+for model, _ in pairs(Hub.TrackedModels) do
+if model and model.Parent and not isOwnCharacter(model) and not isIgnoredContainer(model) then
+local plr = getPlayerFromModel(model)
+if not isTeammate(plr) then
+local hum = model:FindFirstChildOfClass("Humanoid")
+local aimPart = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+if hum and hum.Health > 0 and aimPart then
+local dist = (aimPart.Position - root.Position).Magnitude
 if dist < shortestDist then
 shortestDist = dist
-nearestPart = targetPart
-end
-end
-end
-end
-
-local worldFolder = workspace:FindFirstChild("World")
-if worldFolder then
-for _, desc in ipairs(worldFolder:GetDescendants()) do
-if desc:IsA("Humanoid") and desc.Health > 0 and desc.Parent and desc.Parent:IsA("Model") then
-local model = desc.Parent
-if not isIgnoredModel(model) and not Players:GetPlayerFromCharacter(model) then
-local targetPart = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
-if targetPart then
-local dist = (targetPart.Position - root.Position).Magnitude
-if dist < shortestDist then
-shortestDist = dist
-nearestPart = targetPart
-end
+nearestPart = aimPart
 end
 end
 end
@@ -283,7 +254,7 @@ end
 end
 end
 
--- 3. UI 3D Dark Red + Modal ปลดล็อกเมาส์อัตโนมัติเวลาเปิดเมนู
+-- UI 3D Dark Red + ปุ่มเปิด/ปิด/ซ่อน UI + ปลดล็อกเมาส์ขณะเปิดหน้าต่าง
 local function makeDraggable(dragHandle, targetFrame)
 local dragging = false
 local dragInput = nil
@@ -364,18 +335,9 @@ if oldGui then oldGui:Destroy() end
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "Universal3DRedHub"
 screenGui.ResetOnSpawn = false
-screenGui.DisplayOrder = 999
+screenGui.DisplayOrder = 9999
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = PlayerGui
-
-local modalUnlocker = Instance.new("TextButton")
-modalUnlocker.Name = "ModalMouseUnlocker"
-modalUnlocker.Size = UDim2.new(0, 0, 0, 0)
-modalUnlocker.BackgroundTransparency = 1
-modalUnlocker.Text = ""
-modalUnlocker.Modal = true
-modalUnlocker.Visible = true
-modalUnlocker.Parent = screenGui
 
 local fovRing = Instance.new("Frame")
 fovRing.Name = "FOVCircleRing"
@@ -392,6 +354,25 @@ local fovStroke = Instance.new("UIStroke", fovRing)
 fovStroke.Color = Color3.fromRGB(255, 70, 90)
 fovStroke.Thickness = 1.6
 fovStroke.Transparency = 0.25
+
+-- ปุ่มเปิด/ปิด/ซ่อน UI ด้านบนซ้าย (กดได้ทันที)
+local toggleUiBtn = Instance.new("TextButton")
+toggleUiBtn.Name = "ToggleMenuButton"
+toggleUiBtn.Size = UDim2.new(0, 110, 0, 36)
+toggleUiBtn.Position = UDim2.new(0, 24, 0.5, -78)
+toggleUiBtn.BackgroundColor3 = Color3.fromRGB(130, 16, 24)
+toggleUiBtn.Text = "ซ่อน UI"
+toggleUiBtn.TextColor3 = Color3.fromRGB(255, 240, 240)
+toggleUiBtn.Font = Enum.Font.GothamBlack
+toggleUiBtn.TextSize = 14
+toggleUiBtn.Active = true
+toggleUiBtn.AutoButtonColor = false
+toggleUiBtn.ZIndex = 40
+toggleUiBtn.Parent = screenGui
+Instance.new("UICorner", toggleUiBtn).CornerRadius = UDim.new(0, 10)
+local toggleUiStroke = Instance.new("UIStroke", toggleUiBtn)
+toggleUiStroke.Color = Color3.fromRGB(255, 75, 75)
+toggleUiStroke.Thickness = 1.8
 
 local miniBtn = Instance.new("TextButton")
 miniBtn.Name = "MiniToggle3D"
@@ -533,11 +514,29 @@ end)
 local function setPanelVisible(visible)
 mainFrame.Visible = visible
 shadowFrame.Visible = visible
-modalUnlocker.Visible = visible
+toggleUiBtn.Text = visible and "ซ่อน UI" or "เปิด UI"
+if visible then
+UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+UserInputService.MouseIconEnabled = true
 end
+end
+
+-- ปลดล็อกเคอร์เซอร์เมาส์ตลอดเวลาที่เมนูเปิดอยู่ เพื่อให้ชี้กดปุ่มได้จริงในเกม FPS
+RunService.RenderStepped:Connect(function()
+if mainFrame.Visible then
+if UserInputService.MouseBehavior ~= Enum.MouseBehavior.Default then
+UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+end
+UserInputService.MouseIconEnabled = true
+end
+end)
 
 hideBtn.MouseButton1Click:Connect(function()
 setPanelVisible(false)
+end)
+
+toggleUiBtn.MouseButton1Click:Connect(function()
+setPanelVisible(not mainFrame.Visible)
 end)
 
 miniBtn.MouseButton1Click:Connect(function()
@@ -558,6 +557,7 @@ end)
 
 makeDraggable(header, mainFrame)
 makeDraggable(miniBtn, miniBtn)
+makeDraggable(toggleUiBtn, toggleUiBtn)
 
 local function addToggle(labelText, defaultState, callback)
 local state = defaultState == true
