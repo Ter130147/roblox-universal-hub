@@ -203,17 +203,6 @@ end
 end
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-if gameProcessed then return end
-if input.UserInputType == Enum.UserInputType.MouseButton2 then
-local nextState = not Hub.LockOnEnabled
-Hub.SetLockOn(nextState)
-if lockToggleController then
-lockToggleController.SetSilent(Hub.LockOnEnabled)
-end
-end
-end)
-
 local function makeDraggable(dragHandle, targetFrame)
 local dragging = false
 local dragInput = nil
@@ -261,7 +250,8 @@ sweep.Rotation = 22
 sweep.BackgroundColor3 = Color3.fromRGB(255, 110, 110)
 sweep.BackgroundTransparency = 0.72
 sweep.BorderSizePixel = 0
-sweep.ZIndex = parentFrame.ZIndex + 5
+sweep.Active = false
+sweep.ZIndex = parentFrame.ZIndex + 1
 sweep.Parent = parentFrame
 
 local grad = Instance.new("UIGradient")
@@ -293,6 +283,7 @@ if oldGui then oldGui:Destroy() end
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "Universal3DRedHub"
 screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 999
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = PlayerGui
 
@@ -302,6 +293,7 @@ fovRing.AnchorPoint = Vector2.new(0.5, 0.5)
 fovRing.Position = UDim2.new(0.5, 0, 0.5, 0)
 fovRing.Size = UDim2.new(0, Hub.FOVRadius * 2, 0, Hub.FOVRadius * 2)
 fovRing.BackgroundTransparency = 1
+fovRing.Active = false
 fovRing.Visible = false
 fovRing.ZIndex = 15
 fovRing.Parent = screenGui
@@ -320,8 +312,9 @@ miniBtn.Text = "TER"
 miniBtn.TextColor3 = Color3.fromRGB(255, 235, 235)
 miniBtn.Font = Enum.Font.GothamBlack
 miniBtn.TextSize = 18
+miniBtn.Active = true
 miniBtn.AutoButtonColor = false
-miniBtn.ZIndex = 20
+miniBtn.ZIndex = 30
 miniBtn.Parent = screenGui
 
 Instance.new("UICorner", miniBtn).CornerRadius = UDim.new(0, 14)
@@ -343,6 +336,7 @@ shadowFrame.Size = UDim2.new(0, 340, 0, 290)
 shadowFrame.Position = UDim2.new(0.5, -164, 0.5, -137)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
+shadowFrame.Active = false
 shadowFrame.ZIndex = 4
 shadowFrame.Parent = screenGui
 Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
@@ -354,6 +348,7 @@ mainFrame.Position = UDim2.new(0.5, -170, 0.5, -145)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = true
+mainFrame.Active = true
 mainFrame.ZIndex = 6
 mainFrame.Parent = screenGui
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 16)
@@ -376,6 +371,7 @@ header.Size = UDim2.new(1, 0, 0, 48)
 header.BackgroundColor3 = Color3.fromRGB(110, 14, 22)
 header.BorderSizePixel = 0
 header.ClipsDescendants = true
+header.Active = true
 header.ZIndex = 8
 header.Parent = mainFrame
 
@@ -391,12 +387,13 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -90, 1, 0)
 titleLabel.Position = UDim2.new(0, 16, 0, 0)
 titleLabel.BackgroundTransparency = 1
+titleLabel.Active = false
 titleLabel.Text = "UNIVERSAL 3D HUB"
 titleLabel.TextColor3 = Color3.fromRGB(255, 240, 240)
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Font = Enum.Font.GothamBlack
 titleLabel.TextSize = 16
-titleLabel.ZIndex = 10
+titleLabel.ZIndex = 12
 titleLabel.Parent = header
 
 local hideBtn = Instance.new("TextButton")
@@ -407,7 +404,8 @@ hideBtn.Text = "ซ่อน"
 hideBtn.TextColor3 = Color3.fromRGB(255, 190, 190)
 hideBtn.Font = Enum.Font.GothamBold
 hideBtn.TextSize = 12
-hideBtn.ZIndex = 10
+hideBtn.Active = true
+hideBtn.ZIndex = 15
 hideBtn.Parent = header
 Instance.new("UICorner", hideBtn).CornerRadius = UDim.new(0, 8)
 local hideStroke = Instance.new("UIStroke", hideBtn)
@@ -422,6 +420,7 @@ listHolder.BackgroundTransparency = 1
 listHolder.ScrollBarThickness = 4
 listHolder.ScrollBarImageColor3 = Color3.fromRGB(210, 35, 50)
 listHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
+listHolder.Active = true
 listHolder.ZIndex = 8
 listHolder.Parent = mainFrame
 
@@ -454,6 +453,18 @@ miniBtn.MouseButton1Click:Connect(function()
 setPanelVisible(not mainFrame.Visible)
 end)
 
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+if input.KeyCode == Enum.KeyCode.Insert then
+setPanelVisible(not mainFrame.Visible)
+elseif not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton2 then
+local nextState = not Hub.LockOnEnabled
+Hub.SetLockOn(nextState)
+if lockToggleController then
+lockToggleController.SetSilent(Hub.LockOnEnabled)
+end
+end
+end)
+
 makeDraggable(header, mainFrame)
 makeDraggable(miniBtn, miniBtn)
 
@@ -464,6 +475,7 @@ local row = Instance.new("Frame")
 row.Size = UDim2.new(1, 0, 0, 48)
 row.BackgroundColor3 = Color3.fromRGB(38, 12, 18)
 row.BorderSizePixel = 0
+row.Active = false
 row.ZIndex = 9
 row.Parent = listHolder
 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
@@ -475,6 +487,7 @@ local label = Instance.new("TextLabel")
 label.Size = UDim2.new(1, -86, 1, 0)
 label.Position = UDim2.new(0, 14, 0, 0)
 label.BackgroundTransparency = 1
+label.Active = false
 label.Text = labelText
 label.TextColor3 = Color3.fromRGB(245, 235, 235)
 label.TextXAlignment = Enum.TextXAlignment.Left
@@ -491,8 +504,9 @@ switchBtn.Text = state and "ON" or "OFF"
 switchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 switchBtn.Font = Enum.Font.GothamBlack
 switchBtn.TextSize = 12
+switchBtn.Active = true
 switchBtn.AutoButtonColor = false
-switchBtn.ZIndex = 11
+switchBtn.ZIndex = 20
 switchBtn.Parent = row
 Instance.new("UICorner", switchBtn).CornerRadius = UDim.new(0, 8)
 local switchStroke = Instance.new("UIStroke", switchBtn)
