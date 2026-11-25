@@ -20,6 +20,15 @@ Hub.MaxLockDistance = 150
 Hub.LockSmoothness = 0.22
 Hub.FOVRadius = 120
 
+local function isIgnoredModel(model)
+if not model then return true end
+local full = model:GetFullName()
+if string.find(full, "Workspace%.Highlight") then return true end
+if string.find(full, "Workspace%._Temp") then return true end
+if string.find(full, "Workspace%.Camera") then return true end
+return false
+end
+
 local function isTeammate(player)
 if not player or player == LocalPlayer then return true end
 if LocalPlayer.Team ~= nil and player.Team ~= nil then
@@ -50,9 +59,8 @@ end
 end
 end
 
--- สร้างโครงสีแดง (Highlight) ให้เห็นทั้งตัวทะลุฉาก
 local function applyCharacterHighlight(player, character)
-if not player or player == LocalPlayer or not character then return end
+if not player or player == LocalPlayer or not character or isIgnoredModel(character) then return end
 
 local oldHl = character:FindFirstChild("EnemyRedOutline")
 if oldHl then oldHl:Destroy() end
@@ -66,7 +74,7 @@ local hl = Instance.new("Highlight")
 hl.Name = "EnemyRedOutline"
 hl.Adornee = character
 hl.FillColor = Color3.fromRGB(255, 35, 35)
-hl.FillTransparency = 0.7
+hl.FillTransparency = 0.72
 hl.OutlineColor = Color3.fromRGB(255, 70, 70)
 hl.OutlineTransparency = 0
 hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -103,7 +111,7 @@ end
 
 -- 1. ระบบป้ายชื่อทั้งแมพแยกสีทีม (ทีมเขียว / ศัตรูแดง)
 local function createNametag(player, character)
-if player == LocalPlayer or not character then return end
+if player == LocalPlayer or not character or isIgnoredModel(character) then return end
 local head = character:FindFirstChild("Head") or character:WaitForChild("Head", 5)
 if not head then return end
 
@@ -196,7 +204,7 @@ Hub.ActiveGuis[plr] = nil
 Hub.ActiveHighlights[plr] = nil
 end)
 
--- 2. ระบบล็อกเป้า (รองรับทั้งผู้เล่นใน Workspace และ Dummy ใน Workspace.World.*.Entities)
+-- 2. ระบบล็อกเป้า (เจาะผู้เล่นใน Workspace และ Entities ใน Workspace.World โดยข้าม Highlight/_Temp)
 local lockConn = nil
 local lockToggleController = nil
 
@@ -208,9 +216,8 @@ if not root then return nil end
 local nearestPart = nil
 local shortestDist = Hub.MaxLockDistance
 
--- ค้นหาผู้เล่นใน Workspace
 for _, plr in ipairs(Players:GetPlayers()) do
-if plr ~= LocalPlayer and not isTeammate(plr) and plr.Character then
+if plr ~= LocalPlayer and not isTeammate(plr) and plr.Character and not isIgnoredModel(plr.Character) then
 local hum = plr.Character:FindFirstChildOfClass("Humanoid")
 local targetPart = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
 if hum and hum.Health > 0 and targetPart then
@@ -223,13 +230,12 @@ end
 end
 end
 
--- ค้นหา Dummy / Bot ใน Workspace.World (เช่นสนามยิงปืน Shooting Range)
 local worldFolder = workspace:FindFirstChild("World")
 if worldFolder then
 for _, desc in ipairs(worldFolder:GetDescendants()) do
 if desc:IsA("Humanoid") and desc.Health > 0 and desc.Parent and desc.Parent:IsA("Model") then
 local model = desc.Parent
-if not Players:GetPlayerFromCharacter(model) then
+if not isIgnoredModel(model) and not Players:GetPlayerFromCharacter(model) then
 local targetPart = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
 if targetPart then
 local dist = (targetPart.Position - root.Position).Magnitude
@@ -362,7 +368,6 @@ screenGui.DisplayOrder = 999
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = PlayerGui
 
--- ปุ่มล่องหน Modal สำหรับปลดล็อกเมาส์อัตโนมัติในเกม FPS เมื่อเปิดหน้าต่างหลัก
 local modalUnlocker = Instance.new("TextButton")
 modalUnlocker.Name = "ModalMouseUnlocker"
 modalUnlocker.Size = UDim2.new(0, 0, 0, 0)
