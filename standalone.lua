@@ -16,9 +16,8 @@ Hub.CurrentTarget = nil
 Hub.ActiveGuis = {}
 Hub.ActiveHighlights = {}
 Hub.Connections = {}
-Hub.MaxLockDistance = 120
+Hub.MaxLockDistance = 150
 Hub.LockSmoothness = 0.22
-Hub.TargetFolderName = "Enemies"
 Hub.FOVRadius = 120
 
 local function isTeammate(player)
@@ -51,8 +50,8 @@ end
 end
 end
 
--- สร้างโครงสีแดง (Highlight) ให้เห็นทั้งตัวทะลุฉากสำหรับฝ่ายตรงข้าม/ศัตรู
-local function applyEnemyHighlight(player, character)
+-- สร้างโครงสีแดง (Highlight) ให้เห็นทั้งตัวทะลุฉาก
+local function applyCharacterHighlight(player, character)
 if not player or player == LocalPlayer or not character then return end
 
 local oldHl = character:FindFirstChild("EnemyRedOutline")
@@ -67,8 +66,8 @@ local hl = Instance.new("Highlight")
 hl.Name = "EnemyRedOutline"
 hl.Adornee = character
 hl.FillColor = Color3.fromRGB(255, 35, 35)
-hl.FillTransparency = 0.72
-hl.OutlineColor = Color3.fromRGB(255, 65, 65)
+hl.FillTransparency = 0.7
+hl.OutlineColor = Color3.fromRGB(255, 70, 70)
 hl.OutlineTransparency = 0
 hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 hl.Enabled = Hub.RedOutlineEnabled
@@ -85,7 +84,7 @@ local oldHl = plr.Character:FindFirstChild("EnemyRedOutline")
 if oldHl then oldHl:Destroy() end
 Hub.ActiveHighlights[plr] = nil
 else
-applyEnemyHighlight(plr, plr.Character)
+applyCharacterHighlight(plr, plr.Character)
 end
 end
 end
@@ -117,7 +116,7 @@ billboard.Adornee = head
 billboard.Size = UDim2.new(0, 175, 0, 38)
 billboard.StudsOffset = Vector3.new(0, 2.7, 0)
 billboard.AlwaysOnTop = true
-billboard.MaxDistance = 1500
+billboard.MaxDistance = 2000
 billboard.Enabled = Hub.NametagsEnabled
 billboard.Parent = head
 
@@ -134,7 +133,7 @@ label.TextScaled = true
 label.Parent = billboard
 
 Hub.ActiveGuis[player] = billboard
-applyEnemyHighlight(player, character)
+applyCharacterHighlight(player, character)
 end
 
 local function bindPlayerTag(player)
@@ -197,11 +196,11 @@ Hub.ActiveGuis[plr] = nil
 Hub.ActiveHighlights[plr] = nil
 end)
 
--- 2. ระบบล็อกเป้า (รองรับผู้เล่นต่างทีมและ NPC ในโฟลเดอร์ Enemies)
+-- 2. ระบบล็อกเป้า (รองรับทั้งผู้เล่นใน Workspace และ Dummy ใน Workspace.World.*.Entities)
 local lockConn = nil
 local lockToggleController = nil
 
-local function getNearestEnemy()
+local function getNearestTarget()
 local char = LocalPlayer.Character
 local root = char and char:FindFirstChild("HumanoidRootPart")
 if not root then return nil end
@@ -209,10 +208,11 @@ if not root then return nil end
 local nearestPart = nil
 local shortestDist = Hub.MaxLockDistance
 
+-- ค้นหาผู้เล่นใน Workspace
 for _, plr in ipairs(Players:GetPlayers()) do
 if plr ~= LocalPlayer and not isTeammate(plr) and plr.Character then
 local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-local targetPart = plr.Character:FindFirstChild("HumanoidRootPart")
+local targetPart = plr.Character:FindFirstChild("Head") or plr.Character:FindFirstChild("HumanoidRootPart")
 if hum and hum.Health > 0 and targetPart then
 local dist = (targetPart.Position - root.Position).Magnitude
 if dist < shortestDist then
@@ -223,16 +223,21 @@ end
 end
 end
 
-local enemiesFolder = workspace:FindFirstChild(Hub.TargetFolderName)
-if enemiesFolder then
-for _, npc in ipairs(enemiesFolder:GetChildren()) do
-local hum = npc:FindFirstChildOfClass("Humanoid")
-local npcRoot = npc:FindFirstChild("HumanoidRootPart")
-if hum and hum.Health > 0 and npcRoot then
-local dist = (npcRoot.Position - root.Position).Magnitude
+-- ค้นหา Dummy / Bot ใน Workspace.World (เช่นสนามยิงปืน Shooting Range)
+local worldFolder = workspace:FindFirstChild("World")
+if worldFolder then
+for _, desc in ipairs(worldFolder:GetDescendants()) do
+if desc:IsA("Humanoid") and desc.Health > 0 and desc.Parent and desc.Parent:IsA("Model") then
+local model = desc.Parent
+if not Players:GetPlayerFromCharacter(model) then
+local targetPart = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+if targetPart then
+local dist = (targetPart.Position - root.Position).Magnitude
 if dist < shortestDist then
 shortestDist = dist
-nearestPart = npcRoot
+nearestPart = targetPart
+end
+end
 end
 end
 end
@@ -244,7 +249,7 @@ end
 function Hub.SetLockOn(state)
 Hub.LockOnEnabled = state == true
 if Hub.LockOnEnabled then
-Hub.CurrentTarget = getNearestEnemy()
+Hub.CurrentTarget = getNearestTarget()
 if not Hub.CurrentTarget then
 Hub.LockOnEnabled = false
 if lockToggleController then lockToggleController.SetSilent(false) end
@@ -272,7 +277,7 @@ end
 end
 end
 
--- 3. UI 3D Dark Red + เอฟเฟกต์แสงกวาด
+-- 3. UI 3D Dark Red + Modal ปลดล็อกเมาส์อัตโนมัติเวลาเปิดเมนู
 local function makeDraggable(dragHandle, targetFrame)
 local dragging = false
 local dragInput = nil
@@ -356,6 +361,16 @@ screenGui.ResetOnSpawn = false
 screenGui.DisplayOrder = 999
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = PlayerGui
+
+-- ปุ่มล่องหน Modal สำหรับปลดล็อกเมาส์อัตโนมัติในเกม FPS เมื่อเปิดหน้าต่างหลัก
+local modalUnlocker = Instance.new("TextButton")
+modalUnlocker.Name = "ModalMouseUnlocker"
+modalUnlocker.Size = UDim2.new(0, 0, 0, 0)
+modalUnlocker.BackgroundTransparency = 1
+modalUnlocker.Text = ""
+modalUnlocker.Modal = true
+modalUnlocker.Visible = true
+modalUnlocker.Parent = screenGui
 
 local fovRing = Instance.new("Frame")
 fovRing.Name = "FOVCircleRing"
@@ -513,6 +528,7 @@ end)
 local function setPanelVisible(visible)
 mainFrame.Visible = visible
 shadowFrame.Visible = visible
+modalUnlocker.Visible = visible
 end
 
 hideBtn.MouseButton1Click:Connect(function()
