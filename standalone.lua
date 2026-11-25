@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local CombatHelper = require(script.Parent.modules.combat_helper)
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -528,4 +529,9 @@ end)
 
 lockToggleController = addToggle("ล็อกเป้า (คลิกขวา / ปุ่มนี้)", false, function(enabled)
 Hub.SetLockOn(enabled)
+end)
+-- 4. วงเล็ง FOV Ring บนหน้าจอ (สำหรับใช้ในแมพของตัวเอง)
+local fovRing = CombatHelper.CreateFOVCircle(screenGui, CombatHelper.FOVRadius)
+addToggle("แสดงวงเล็ง FOV (FOV Ring)", false, function(enabled)
+fovRing.Visible = enabled
 end)
