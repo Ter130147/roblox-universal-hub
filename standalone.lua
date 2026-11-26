@@ -1169,24 +1169,6 @@ targetMarker.Position = UDim2.new(0, screenPos.X, 0, screenPos.Y)
 targetMarker.Visible = true
 end
 
-local toggleUiBtn = Instance.new("TextButton")
-toggleUiBtn.Name = "ToggleMenuButton"
-toggleUiBtn.Size = UDim2.new(0, 110, 0, 36)
-toggleUiBtn.Position = UDim2.new(0, 24, 0.5, -78)
-toggleUiBtn.BackgroundColor3 = Color3.fromRGB(130, 16, 24)
-toggleUiBtn.Text = "ซ่อน UI"
-toggleUiBtn.TextColor3 = Color3.fromRGB(255, 240, 240)
-toggleUiBtn.Font = Enum.Font.GothamBlack
-toggleUiBtn.TextSize = 14
-toggleUiBtn.Active = true
-toggleUiBtn.Modal = true
-toggleUiBtn.AutoButtonColor = false
-toggleUiBtn.ZIndex = 40
-toggleUiBtn.Parent = screenGui
-Instance.new("UICorner", toggleUiBtn).CornerRadius = UDim.new(0, 10)
-local toggleUiStroke = Instance.new("UIStroke", toggleUiBtn)
-toggleUiStroke.Color = Color3.fromRGB(255, 75, 75)
-toggleUiStroke.Thickness = 1.8
 
 local miniBtn = Instance.new("TextButton")
 miniBtn.Name = "MiniToggle3D"
@@ -1328,7 +1310,7 @@ mainFrame.Position.Y.Offset + 8
 )
 end)
 
-local modalButtons = { toggleUiBtn, miniBtn, hideBtn }
+local modalButtons = { miniBtn, hideBtn }
 local dropdownMenus = {}
 
 closeAllDropdowns = function()
@@ -1401,7 +1383,6 @@ end))
 
 makeDraggable(header, mainFrame)
 makeDraggable(miniBtn, miniBtn)
-makeDraggable(toggleUiBtn, toggleUiBtn)
 
 local function addToggle(labelText, defaultState, callback)
 local state = defaultState == true
