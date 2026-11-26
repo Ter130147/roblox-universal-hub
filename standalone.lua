@@ -10,7 +10,8 @@ local Camera = workspace.CurrentCamera
 local Hub = {}
 Hub.NametagsEnabled = true
 Hub.RedOutlineEnabled = true
-Hub.LockOnEnabled = false
+Hub.LockHolding = false
+Hub.LockBind = "RMB" -- ตัวเลือก: "RMB", "E", "Q", "F"
 Hub.CurrentTarget = nil
 Hub.TrackedModels = {}
 Hub.ActiveGuis = {}
@@ -18,6 +19,13 @@ Hub.ActiveHighlights = {}
 Hub.MaxLockDistance = 160
 Hub.LockSmoothness = 0.24
 Hub.FOVRadius = 120
+
+local LockKeyOptions = {
+{ label = "คลิกขวา (RMB)", value = "RMB" },
+{ label = "ปุ่ม E", value = "E" },
+{ label = "ปุ่ม Q", value = "Q" },
+{ label = "ปุ่ม F", value = "F" },
+}
 
 local function isOwnCharacter(model)
 if not model then return true end
@@ -257,8 +265,9 @@ LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked)
 
 scanInitialModels()
 
+-- ระบบล็อกเป้าแบบกดค้าง (Hold-to-Lock) และปล่อยปุ่มเพื่อปลดล็อก
 local lockConn = nil
-local lockToggleController = nil
+local lockStatusUpdater = nil
 
 local function getNearestTarget()
 local char = LocalPlayer.Character
@@ -288,35 +297,71 @@ end
 return nearestPart
 end
 
-function Hub.SetLockOn(state)
-Hub.LockOnEnabled = state == true
-if Hub.LockOnEnabled then
-Hub.CurrentTarget = getNearestTarget()
-if not Hub.CurrentTarget then
-Hub.LockOnEnabled = false
-if lockToggleController then lockToggleController.SetSilent(false) end
-return
-end
-if lockConn then lockConn:Disconnect() end
-lockConn = RunService.RenderStepped:Connect(function()
-local target = Hub.CurrentTarget
-local targetHum = target and target.Parent and target.Parent:FindFirstChildOfClass("Humanoid")
-if not target or not target.Parent or not targetHum or targetHum.Health <= 0 then
-Hub.SetLockOn(false)
-if lockToggleController then lockToggleController.SetSilent(false) end
-return
-end
-local camPos = Camera.CFrame.Position
-local lookCFrame = CFrame.lookAt(camPos, target.Position)
-Camera.CFrame = Camera.CFrame:Lerp(lookCFrame, Hub.LockSmoothness)
-end)
-else
+local function stopLockLoop()
+Hub.LockHolding = false
 Hub.CurrentTarget = nil
 if lockConn then
 lockConn:Disconnect()
 lockConn = nil
 end
+if lockStatusUpdater then
+lockStatusUpdater(false)
 end
+end
+
+local function startLockHold()
+if Hub.LockHolding then return end
+local target = getNearestTarget()
+if not target then
+stopLockLoop()
+return
+end
+
+Hub.LockHolding = true
+Hub.CurrentTarget = target
+if lockStatusUpdater then
+lockStatusUpdater(true)
+end
+
+if lockConn then
+lockConn:Disconnect()
+lockConn = nil
+end
+
+lockConn = RunService.RenderStepped:Connect(function()
+if not Hub.LockHolding then
+stopLockLoop()
+return
+end
+local cur = Hub.CurrentTarget
+local curHum = cur and cur.Parent and cur.Parent:FindFirstChildOfClass("Humanoid")
+if not cur or not cur.Parent or not curHum or curHum.Health <= 0 then
+local nextTarget = getNearestTarget()
+if nextTarget then
+Hub.CurrentTarget = nextTarget
+cur = nextTarget
+else
+stopLockLoop()
+return
+end
+end
+local camPos = Camera.CFrame.Position
+local lookCFrame = CFrame.lookAt(camPos, cur.Position)
+Camera.CFrame = Camera.CFrame:Lerp(lookCFrame, Hub.LockSmoothness)
+end)
+end
+
+local function matchesLockBind(input)
+if Hub.LockBind == "RMB" then
+return input.UserInputType == Enum.UserInputType.MouseButton2
+elseif Hub.LockBind == "E" then
+return input.KeyCode == Enum.KeyCode.E
+elseif Hub.LockBind == "Q" then
+return input.KeyCode == Enum.KeyCode.Q
+elseif Hub.LockBind == "F" then
+return input.KeyCode == Enum.KeyCode.F
+end
+return false
 end
 
 local function makeDraggable(dragHandle, targetFrame)
@@ -468,8 +513,8 @@ applySweepEffect(miniBtn)
 
 local shadowFrame = Instance.new("Frame")
 shadowFrame.Name = "MainShadow3D"
-shadowFrame.Size = UDim2.new(0, 340, 0, 345)
-shadowFrame.Position = UDim2.new(0.5, -164, 0.5, -165)
+shadowFrame.Size = UDim2.new(0, 350, 0, 385)
+shadowFrame.Position = UDim2.new(0.5, -169, 0.5, -185)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
 shadowFrame.Active = false
@@ -479,11 +524,11 @@ Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainPanel3D"
-mainFrame.Size = UDim2.new(0, 340, 0, 345)
-mainFrame.Position = UDim2.new(0.5, -170, 0.5, -172)
+mainFrame.Size = UDim2.new(0, 350, 0, 385)
+mainFrame.Position = UDim2.new(0.5, -175, 0.5, -192)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
-mainFrame.ClipsDescendants = true
+mainFrame.ClipsDescendants = false
 mainFrame.Active = true
 mainFrame.ZIndex = 6
 mainFrame.Parent = screenGui
@@ -557,6 +602,7 @@ listHolder.BackgroundTransparency = 1
 listHolder.ScrollBarThickness = 4
 listHolder.ScrollBarImageColor3 = Color3.fromRGB(210, 35, 50)
 listHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
+listHolder.ClipsDescendants = false
 listHolder.Active = true
 listHolder.ZIndex = 8
 listHolder.Parent = mainFrame
@@ -577,13 +623,17 @@ mainFrame.Position.Y.Offset + 8
 )
 end)
 
+local modalButtons = { toggleUiBtn, miniBtn, hideBtn }
+
 local function setPanelVisible(visible)
 mainFrame.Visible = visible
 shadowFrame.Visible = visible
 toggleUiBtn.Text = visible and "ซ่อน UI" or "เปิด UI"
-toggleUiBtn.Modal = visible
-miniBtn.Modal = visible
-hideBtn.Modal = visible
+for _, btn in ipairs(modalButtons) do
+if btn and btn.Parent then
+btn.Modal = visible
+end
+end
 if visible then
 UserInputService.MouseIconEnabled = true
 end
@@ -604,12 +654,16 @@ end)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 if input.KeyCode == Enum.KeyCode.Insert or input.KeyCode == Enum.KeyCode.RightShift then
 setPanelVisible(not mainFrame.Visible)
-elseif not gameProcessed and input.UserInputType == Enum.UserInputType.MouseButton2 then
-local nextState = not Hub.LockOnEnabled
-Hub.SetLockOn(nextState)
-if lockToggleController then
-lockToggleController.SetSilent(Hub.LockOnEnabled)
+return
 end
+if not gameProcessed and matchesLockBind(input) then
+startLockHold()
+end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+if matchesLockBind(input) then
+stopLockLoop()
 end
 end)
 
@@ -663,6 +717,8 @@ local switchStroke = Instance.new("UIStroke", switchBtn)
 switchStroke.Color = state and Color3.fromRGB(255, 110, 110) or Color3.fromRGB(110, 45, 55)
 switchStroke.Thickness = 1.5
 
+table.insert(modalButtons, switchBtn)
+
 local function refreshVisual(animated)
 local targetColor = state and Color3.fromRGB(210, 28, 42) or Color3.fromRGB(55, 22, 28)
 local targetBorder = state and Color3.fromRGB(255, 110, 110) or Color3.fromRGB(110, 45, 55)
@@ -686,42 +742,139 @@ refreshVisual(false)
 if state and callback then
 task.spawn(callback, true)
 end
-
-return {
-SetSilent = function(newState)
-state = newState == true
-refreshVisual(true)
-end,
-SetModal = function(isModal)
-switchBtn.Modal = isModal == true
-end,
-}
 end
 
-local controllers = {}
-table.insert(controllers, addToggle("โครงศัตรูสีแดง (Red Outline)", true, function(enabled)
-Hub.SetRedOutline(enabled)
-end))
+-- Dropdown เลือกปุ่มกดค้างเพื่อล็อกเป้า (ปล่อยปุ่ม = ปลดล็อก)
+local function addLockBindDropdown()
+local row = Instance.new("Frame")
+row.Name = "LockBindRow"
+row.Size = UDim2.new(1, 0, 0, 48)
+row.BackgroundColor3 = Color3.fromRGB(38, 12, 18)
+row.BorderSizePixel = 0
+row.Active = false
+row.ZIndex = 12
+row.Parent = listHolder
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
+local rowStroke = Instance.new("UIStroke", row)
+rowStroke.Color = Color3.fromRGB(120, 22, 32)
+rowStroke.Thickness = 1.4
 
-table.insert(controllers, addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศัตรูแดง)", true, function(enabled)
-Hub.SetNametags(enabled)
-end))
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, -138, 1, 0)
+label.Position = UDim2.new(0, 14, 0, 0)
+label.BackgroundTransparency = 1
+label.Active = false
+label.Text = "ปุ่มกดค้างล็อกเป้า"
+label.TextColor3 = Color3.fromRGB(245, 235, 235)
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Font = Enum.Font.GothamBold
+label.TextSize = 13
+label.ZIndex = 13
+label.Parent = row
 
-lockToggleController = addToggle("ล็อกเป้า (คลิกขวา / ปุ่มนี้)", false, function(enabled)
-Hub.SetLockOn(enabled)
+local statusBadge = Instance.new("TextLabel")
+statusBadge.Size = UDim2.new(0, 56, 0, 24)
+statusBadge.Position = UDim2.new(1, -184, 0.5, -12)
+statusBadge.BackgroundColor3 = Color3.fromRGB(55, 22, 28)
+statusBadge.Text = "ปล่อย"
+statusBadge.TextColor3 = Color3.fromRGB(220, 190, 190)
+statusBadge.Font = Enum.Font.GothamBlack
+statusBadge.TextSize = 11
+statusBadge.ZIndex = 14
+statusBadge.Parent = row
+Instance.new("UICorner", statusBadge).CornerRadius = UDim.new(0, 6)
+
+lockStatusUpdater = function(isLocked)
+statusBadge.Text = isLocked and "ล็อกอยู่" or "ปล่อย"
+statusBadge.BackgroundColor3 = isLocked and Color3.fromRGB(210, 28, 42) or Color3.fromRGB(55, 22, 28)
+statusBadge.TextColor3 = isLocked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(220, 190, 190)
+end
+
+local dropdownBtn = Instance.new("TextButton")
+dropdownBtn.Size = UDim2.new(0, 112, 0, 30)
+dropdownBtn.Position = UDim2.new(1, -122, 0.5, -15)
+dropdownBtn.BackgroundColor3 = Color3.fromRGB(85, 14, 22)
+dropdownBtn.Text = "คลิกขวา (RMB) ▾"
+dropdownBtn.TextColor3 = Color3.fromRGB(255, 240, 240)
+dropdownBtn.Font = Enum.Font.GothamBold
+dropdownBtn.TextSize = 11
+dropdownBtn.Active = true
+dropdownBtn.Modal = true
+dropdownBtn.AutoButtonColor = false
+dropdownBtn.ZIndex = 25
+dropdownBtn.Parent = row
+Instance.new("UICorner", dropdownBtn).CornerRadius = UDim.new(0, 8)
+local ddStroke = Instance.new("UIStroke", dropdownBtn)
+ddStroke.Color = Color3.fromRGB(215, 55, 70)
+ddStroke.Thickness = 1.4
+
+table.insert(modalButtons, dropdownBtn)
+
+local menuFrame = Instance.new("Frame")
+menuFrame.Name = "LockKeyDropdownList"
+menuFrame.Size = UDim2.new(0, 112, 0, #LockKeyOptions * 28 + 6)
+menuFrame.Position = UDim2.new(1, -122, 1, 4)
+menuFrame.BackgroundColor3 = Color3.fromRGB(30, 9, 14)
+menuFrame.BorderSizePixel = 0
+menuFrame.Visible = false
+menuFrame.Active = true
+menuFrame.ZIndex = 60
+menuFrame.Parent = row
+Instance.new("UICorner", menuFrame).CornerRadius = UDim.new(0, 8)
+local menuStroke = Instance.new("UIStroke", menuFrame)
+menuStroke.Color = Color3.fromRGB(220, 60, 75)
+menuStroke.Thickness = 1.5
+
+local menuLayout = Instance.new("UIListLayout", menuFrame)
+menuLayout.Padding = UDim.new(0, 2)
+menuLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local menuPad = Instance.new("UIPadding", menuFrame)
+menuPad.PaddingTop = UDim.new(0, 3)
+menuPad.PaddingBottom = UDim.new(0, 3)
+menuPad.PaddingLeft = UDim.new(0, 3)
+menuPad.PaddingRight = UDim.new(0, 3)
+
+for _, opt in ipairs(LockKeyOptions) do
+local optBtn = Instance.new("TextButton")
+optBtn.Size = UDim2.new(1, 0, 0, 26)
+optBtn.BackgroundColor3 = Color3.fromRGB(52, 14, 20)
+optBtn.Text = opt.label
+optBtn.TextColor3 = Color3.fromRGB(250, 235, 235)
+optBtn.Font = Enum.Font.GothamBold
+optBtn.TextSize = 11
+optBtn.Active = true
+optBtn.Modal = true
+optBtn.AutoButtonColor = false
+optBtn.ZIndex = 65
+optBtn.Parent = menuFrame
+Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 6)
+
+table.insert(modalButtons, optBtn)
+
+optBtn.MouseButton1Click:Connect(function()
+stopLockLoop()
+Hub.LockBind = opt.value
+dropdownBtn.Text = opt.label .. " ▾"
+menuFrame.Visible = false
 end)
-table.insert(controllers, lockToggleController)
+end
 
-table.insert(controllers, addToggle("แสดงวงเล็ง FOV Ring", false, function(enabled)
+dropdownBtn.MouseButton1Click:Connect(function()
+menuFrame.Visible = not menuFrame.Visible
+end)
+end
+
+addToggle("โครงศัตรูสีแดง (Red Outline)", true, function(enabled)
+Hub.SetRedOutline(enabled)
+end)
+
+addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศัตรูแดง)", true, function(enabled)
+Hub.SetNametags(enabled)
+end)
+
+addLockBindDropdown()
+
+addToggle("แสดงวงเล็ง FOV Ring", false, function(enabled)
 fovRing.Visible = enabled
-end))
-
-local origSetPanelVisible = setPanelVisible
-setPanelVisible = function(visible)
-origSetPanelVisible(visible)
-for _, ctrl in ipairs(controllers) do
-if ctrl and ctrl.SetModal then
-ctrl.SetModal(visible)
-end
-end
-end
+end)
