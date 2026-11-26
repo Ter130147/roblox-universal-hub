@@ -1218,8 +1218,8 @@ applySweepEffect(miniBtn)
 
 local shadowFrame = Instance.new("Frame")
 shadowFrame.Name = "MainShadow3D"
-shadowFrame.Size = UDim2.new(0, 360, 0, 620)
-shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -302)
+shadowFrame.Size = UDim2.new(0, 360, 0, 520)
+shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -252)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
 shadowFrame.Active = false
@@ -1229,8 +1229,8 @@ Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainPanel3D"
-mainFrame.Size = UDim2.new(0, 360, 0, 620)
-mainFrame.Position = UDim2.new(0.5, -180, 0.5, -310)
+mainFrame.Size = UDim2.new(0, 360, 0, 520)
+mainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = false
@@ -1307,7 +1307,7 @@ listHolder.BackgroundTransparency = 1
 listHolder.ScrollBarThickness = 4
 listHolder.ScrollBarImageColor3 = Color3.fromRGB(210, 35, 50)
 listHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
-listHolder.ClipsDescendants = false
+listHolder.ClipsDescendants = true
 listHolder.Active = true
 listHolder.ZIndex = 8
 listHolder.Parent = mainFrame
@@ -1631,7 +1631,7 @@ local dropdownBtn = Instance.new("TextButton")
 dropdownBtn.Size = UDim2.new(0, 114, 0, 30)
 dropdownBtn.Position = UDim2.new(1, -124, 0.5, -15)
 dropdownBtn.BackgroundColor3 = Color3.fromRGB(85, 14, 22)
-dropdownBtn.Text = defaultText .. " ▾"
+dropdownBtn.Text = defaultText .. " v"
 dropdownBtn.TextColor3 = Color3.fromRGB(255, 240, 240)
 dropdownBtn.Font = Enum.Font.GothamBold
 dropdownBtn.TextSize = 11
@@ -1650,13 +1650,21 @@ table.insert(modalButtons, dropdownBtn)
 local menuFrame = Instance.new("Frame")
 menuFrame.Name = rowName .. "Menu"
 menuFrame.Size = UDim2.new(0, 114, 0, #options * 28 + 6)
-menuFrame.Position = UDim2.new(1, -124, 1, 4)
+menuFrame.Position = UDim2.new(0, 0, 0, 0)
 menuFrame.BackgroundColor3 = Color3.fromRGB(30, 9, 14)
 menuFrame.BorderSizePixel = 0
 menuFrame.Visible = false
 menuFrame.Active = true
-menuFrame.ZIndex = zBase + 40
-menuFrame.Parent = row
+menuFrame.ZIndex = 120
+menuFrame.Parent = screenGui
+
+local function syncMenuPos()
+if dropdownBtn and dropdownBtn.Parent then
+local absPos = dropdownBtn.AbsolutePosition
+local absSize = dropdownBtn.AbsoluteSize
+menuFrame.Position = UDim2.new(0, absPos.X, 0, absPos.Y + absSize.Y + 4)
+end
+end
 Instance.new("UICorner", menuFrame).CornerRadius = UDim.new(0, 8)
 local menuStroke = Instance.new("UIStroke", menuFrame)
 menuStroke.Color = Color3.fromRGB(220, 60, 75)
@@ -1692,7 +1700,7 @@ Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 6)
 table.insert(modalButtons, optBtn)
 
 trackConn(optBtn.MouseButton1Click:Connect(function()
-dropdownBtn.Text = opt.label .. " ▾"
+dropdownBtn.Text = opt.label .. " v"
 menuFrame.Visible = false
 if onSelect then onSelect(opt.value) end
 saveConfig()
@@ -1702,7 +1710,22 @@ end
 trackConn(dropdownBtn.MouseButton1Click:Connect(function()
 local nextState = not menuFrame.Visible
 closeAllDropdowns()
+if nextState then
+syncMenuPos()
+end
 menuFrame.Visible = nextState
+end))
+
+trackConn(listHolder:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+if menuFrame.Visible then
+syncMenuPos()
+end
+end))
+
+trackConn(mainFrame:GetPropertyChangedSignal("Position"):Connect(function()
+if menuFrame.Visible then
+syncMenuPos()
+end
 end))
 end
 
