@@ -26,6 +26,8 @@ end
 local Hub = {}
 Hub.NametagsEnabled = true
 Hub.RedOutlineEnabled = true
+Hub.ItemEspEnabled = false
+Hub.FovOnlyLock = false
 Hub.LockHolding = false
 Hub.LockBind = "F"
 Hub.AimPartMode = "Head"
@@ -33,7 +35,10 @@ Hub.CurrentTarget = nil
 Hub.TrackedModels = {}
 Hub.ActiveGuis = {}
 Hub.ActiveHighlights = {}
+Hub.TrackedItems = {}
+Hub.ActiveItemGuis = {}
 Hub.MaxLockDistance = 160
+Hub.MaxItemEspDistance = 120
 Hub.LockSmoothness = 0.24
 Hub.FOVRadius = 120
 
@@ -95,9 +100,9 @@ end
 return false
 end
 
-local function isIgnoredContainer(model)
-if not model then return true end
-local full = model:GetFullName()
+local function isIgnoredContainer(instance)
+if not instance then return true end
+local full = instance:GetFullName()
 if string.find(full, "Workspace%.Camera") then return true end
 if string.find(full, "Workspace%._Temp") then return true end
 if string.find(full, "HighlightHolder") then return true end
@@ -172,6 +177,133 @@ Hub.ActiveHighlights[model] = nil
 Hub.TrackedModels[model] = nil
 end
 
+-- ระบบแสดงชื่อไอเทมตามแมพ (Item ESP)
+local function getItemDisplayPart(obj)
+if not obj or not obj.Parent or isIgnoredContainer(obj) then return nil end
+if LocalPlayer.Character and obj:IsDescendantOf(LocalPlayer.Character) then return nil end
+if obj:FindFirstChildOfClass("Humanoid") then return nil end
+
+local hasInteract = obj:FindFirstChildOfClass("ClickDetector", true) ~= nil
+or obj:FindFirstChildOfClass("ProximityPrompt", true) ~= nil
+or obj:IsA("Tool")
+
+local isItemFolder = false
+local cur = obj.Parent
+while cur and cur ~= workspace do
+local n = string.lower(cur.Name)
+if string.find(n, "item") or string.find(n, "drop") or string.find(n, "loot") or string.find(n, "pickup") or string.find(n, "weapon") or string.find(n, "gun") then
+isItemFolder = true
+break
+end
+cur = cur.Parent
+end
+
+if not hasInteract and not isItemFolder then
+return nil
+end
+
+if obj:IsA("BasePart") then
+return obj
+elseif obj:IsA("Model") then
+return obj.PrimaryPart or obj:FindFirstChild("Handle") or obj:FindFirstChildWhichIsA("BasePart", true)
+elseif obj:IsA("Tool") then
+return obj:FindFirstChild("Handle") or obj:FindFirstChildWhichIsA("BasePart", true)
+end
+return nil
+end
+
+local function cleanupItemEsp(obj)
+local gui = Hub.ActiveItemGuis[obj]
+if gui and gui.Parent then gui:Destroy() end
+Hub.ActiveItemGuis[obj] = nil
+Hub.TrackedItems[obj] = nil
+end
+
+local function clearAllItemEsp()
+for obj in pairs(Hub.TrackedItems) do
+cleanupItemEsp(obj)
+end
+for _, desc in ipairs(workspace:GetDescendants()) do
+if desc.Name == "MapItemTag" then
+pcall(function() desc:Destroy() end)
+end
+end
+end
+
+local function attachItemTag(obj)
+if not obj or not obj.Parent then return end
+local anchorPart = getItemDisplayPart(obj)
+if not anchorPart then return end
+
+local existingGui = Hub.ActiveItemGuis[obj]
+if not existingGui or not existingGui.Parent then
+local old = anchorPart:FindFirstChild("MapItemTag")
+if old then old:Destroy() end
+
+local billboard = Instance.new("BillboardGui")
+billboard.Name = "MapItemTag"
+billboard.Adornee = anchorPart
+billboard.Size = UDim2.new(0, 150, 0, 28)
+billboard.StudsOffset = Vector3.new(0, 1.8, 0)
+billboard.AlwaysOnTop = true
+billboard.MaxDistance = Hub.MaxItemEspDistance
+billboard.Parent = anchorPart
+
+local label = Instance.new("TextLabel")
+label.Name = "ItemName"
+label.Size = UDim2.new(1, 0, 1, 0)
+label.BackgroundTransparency = 1
+label.Text = tostring(obj:GetAttribute("ItemName") or obj.Name)
+label.TextColor3 = Color3.fromRGB(255, 215, 75)
+label.TextStrokeTransparency = 0.15
+label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+label.Font = Enum.Font.GothamBold
+label.TextScaled = true
+label.Parent = billboard
+
+Hub.ActiveItemGuis[obj] = billboard
+existingGui = billboard
+end
+
+existingGui.Adornee = anchorPart
+existingGui.MaxDistance = Hub.MaxItemEspDistance
+existingGui.Enabled = Hub.ItemEspEnabled
+Hub.TrackedItems[obj] = true
+end
+
+local function scanMapItems()
+if not Hub.ItemEspEnabled then
+clearAllItemEsp()
+return
+end
+
+for obj in pairs(Hub.TrackedItems) do
+if not obj or not obj.Parent or not getItemDisplayPart(obj) then
+cleanupItemEsp(obj)
+else
+attachItemTag(obj)
+end
+end
+
+for _, desc in ipairs(workspace:GetDescendants()) do
+if desc:IsA("Tool") or desc:IsA("ClickDetector") or desc:IsA("ProximityPrompt") then
+local candidate = desc:IsA("Tool") and desc or desc.Parent
+if candidate then
+attachItemTag(candidate)
+end
+elseif desc:IsA("Model") or desc:IsA("BasePart") then
+if getItemDisplayPart(desc) then
+attachItemTag(desc)
+end
+end
+end
+end
+
+function Hub.SetItemEsp(state)
+Hub.ItemEspEnabled = state == true
+scanMapItems()
+end
+
 local function clearAllEsp()
 for model in pairs(Hub.TrackedModels) do
 cleanupModel(model)
@@ -181,6 +313,7 @@ if desc.Name == "EnemyRedOutline" or desc.Name == "MapNametag" then
 pcall(function() desc:Destroy() end)
 end
 end
+clearAllItemEsp()
 end
 
 local function attachVisualsToModel(model)
@@ -302,11 +435,25 @@ end
 function Hub.ResetEsp()
 clearAllEsp()
 scanInitialModels()
+if Hub.ItemEspEnabled then
+scanMapItems()
+end
 end
 
 trackConn(workspace.DescendantAdded:Connect(function(desc)
 if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
 task.defer(attachVisualsToModel, desc.Parent)
+elseif Hub.ItemEspEnabled then
+if desc:IsA("Tool") or desc:IsA("ClickDetector") or desc:IsA("ProximityPrompt") then
+local candidate = desc:IsA("Tool") and desc or desc.Parent
+if candidate then
+task.defer(attachItemTag, candidate)
+end
+elseif desc:IsA("Model") or desc:IsA("BasePart") then
+if getItemDisplayPart(desc) then
+task.defer(attachItemTag, desc)
+end
+end
 end
 end))
 
@@ -315,6 +462,8 @@ if desc:IsA("Model") and Hub.TrackedModels[desc] then
 cleanupModel(desc)
 elseif desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") and Hub.TrackedModels[desc.Parent] then
 cleanupModel(desc.Parent)
+elseif Hub.TrackedItems[desc] then
+cleanupItemEsp(desc)
 end
 end))
 
@@ -390,6 +539,16 @@ return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
 end
 end
 
+local function isWithinFov(worldPos)
+if not Hub.FovOnlyLock then return true end
+local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
+if not onScreen or screenPos.Z <= 0 then return false end
+local viewportSize = Camera.ViewportSize
+local center = Vector2.new(viewportSize.X * 0.5, viewportSize.Y * 0.5)
+local pt = Vector2.new(screenPos.X, screenPos.Y)
+return (pt - center).Magnitude <= Hub.FOVRadius
+end
+
 local function getNearestTarget()
 local char = LocalPlayer.Character
 local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -403,7 +562,7 @@ if model and model.Parent and not isOwnCharacter(model) and not isIgnoredContain
 local plr = getPlayerFromModel(model)
 if not isTeammate(plr, model) then
 local aimPart = getAimPartFromModel(model)
-if aimPart then
+if aimPart and isWithinFov(aimPart.Position) then
 local dist = (aimPart.Position - root.Position).Magnitude
 if dist < shortestDist then
 shortestDist = dist
@@ -447,7 +606,7 @@ local cur = Hub.CurrentTarget
 local targetModel = cur and cur.Parent
 local aimPart = getAimPartFromModel(targetModel)
 
-if not root or not targetModel or not aimPart then
+if not root or not targetModel or not aimPart or not isWithinFov(aimPart.Position) then
 local nextTarget = getNearestTarget()
 if nextTarget then
 Hub.CurrentTarget = nextTarget
@@ -619,8 +778,8 @@ applySweepEffect(miniBtn)
 
 local shadowFrame = Instance.new("Frame")
 shadowFrame.Name = "MainShadow3D"
-shadowFrame.Size = UDim2.new(0, 360, 0, 520)
-shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -252)
+shadowFrame.Size = UDim2.new(0, 360, 0, 560)
+shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -272)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
 shadowFrame.Active = false
@@ -630,8 +789,8 @@ Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainPanel3D"
-mainFrame.Size = UDim2.new(0, 360, 0, 520)
-mainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
+mainFrame.Size = UDim2.new(0, 360, 0, 560)
+mainFrame.Position = UDim2.new(0.5, -180, 0.5, -280)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = false
@@ -1046,6 +1205,14 @@ end)
 
 addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศัตรูแดง)", true, function(enabled)
 Hub.SetNametags(enabled)
+end)
+
+addToggle("แสดงชื่อไอเทมตามแมพ", false, function(enabled)
+Hub.SetItemEsp(enabled)
+end)
+
+addToggle("ล็อกเฉพาะในวงเล็ง FOV", false, function(enabled)
+Hub.FovOnlyLock = enabled
 end)
 
 addDropdownRow("LockBindRow", "ปุ่มกดค้างล็อกเป้า", LockKeyOptions, "ปุ่ม F", 18, function(val)
