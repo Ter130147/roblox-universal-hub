@@ -10,6 +10,20 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
+local CoreGui = game:GetService("CoreGui")
+
+local function attachGuiToTopLayer(guiObj)
+guiObj.ResetOnSpawn = false
+guiObj.DisplayOrder = 2147483647
+guiObj.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+local okCore = pcall(function()
+guiObj.Parent = CoreGui
+end)
+if not okCore or not guiObj.Parent then
+guiObj.Parent = PlayerGui
+end
+end
+
 local KEY_API_URL = "https://ter-key-api.copter2700.workers.dev"
 local KEY_CACHE_FILE = "TerUniversalHub_Key.json"
 local HEARTBEAT_INTERVAL = 1200
@@ -1206,7 +1220,7 @@ miniBtn.TextSize = 16
 miniBtn.Active = true
 miniBtn.Modal = true
 miniBtn.AutoButtonColor = false
-miniBtn.ZIndex = 30
+miniBtn.ZIndex = 200
 miniBtn.Parent = screenGui
 Instance.new("UICorner", miniBtn).CornerRadius = UDim.new(0, 12)
 local miniStroke = Instance.new("UIStroke", miniBtn)
@@ -1221,7 +1235,7 @@ mainFrame.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = true
 mainFrame.Active = true
-mainFrame.ZIndex = 6
+mainFrame.ZIndex = 150
 mainFrame.Parent = screenGui
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
 local mainStroke = Instance.new("UIStroke", mainFrame)
