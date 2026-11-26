@@ -1798,73 +1798,24 @@ ddBtn.Parent = row
 Instance.new("UICorner", ddBtn).CornerRadius = UDim.new(0, 6)
 table.insert(modalButtons, ddBtn)
 
-local menu = Instance.new("Frame")
-menu.Size = UDim2.new(0, 114, 0, #options * 26 + 6)
-menu.Position = UDim2.new(0, 0, 0, 0)
-menu.BackgroundColor3 = Color3.fromRGB(24, 24, 32)
-menu.BorderSizePixel = 0
-menu.Visible = false
-menu.Active = true
-menu.ZIndex = 120
-menu.Parent = screenGui
-Instance.new("UICorner", menu).CornerRadius = UDim.new(0, 7)
-local mStroke = Instance.new("UIStroke", menu)
-mStroke.Color = Color3.fromRGB(210, 35, 52)
-mStroke.Thickness = 1.2
-table.insert(dropdownMenus, menu)
-
-local function syncPos()
-if ddBtn and ddBtn.Parent then
-local p = ddBtn.AbsolutePosition
-local s = ddBtn.AbsoluteSize
-menu.Position = UDim2.new(0, p.X, 0, p.Y + s.Y + 3)
+local currentIdx = 1
+for i, opt in ipairs(options) do
+if opt.label == defaultText then
+currentIdx = i
+break
 end
 end
 
-local mLayout = Instance.new("UIListLayout", menu)
-mLayout.Padding = UDim.new(0, 2)
-mLayout.SortOrder = Enum.SortOrder.LayoutOrder
-local mPad = Instance.new("UIPadding", menu)
-mPad.PaddingTop = UDim.new(0, 3)
-mPad.PaddingBottom = UDim.new(0, 3)
-mPad.PaddingLeft = UDim.new(0, 3)
-mPad.PaddingRight = UDim.new(0, 3)
-
-for _, opt in ipairs(options) do
-local optBtn = Instance.new("TextButton")
-optBtn.Size = UDim2.new(1, 0, 0, 24)
-optBtn.BackgroundColor3 = Color3.fromRGB(36, 36, 46)
-optBtn.Text = opt.label
-optBtn.TextColor3 = Color3.fromRGB(245, 245, 250)
-optBtn.Font = Enum.Font.GothamBold
-optBtn.TextSize = 11
-optBtn.Active = true
-optBtn.Modal = true
-optBtn.AutoButtonColor = false
-optBtn.ZIndex = 125
-optBtn.Parent = menu
-Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 5)
-table.insert(modalButtons, optBtn)
-
-trackConn(optBtn.MouseButton1Click:Connect(function()
-ddBtn.Text = opt.label .. " v"
-menu.Visible = false
-if onSelect then onSelect(opt.value) end
-saveConfig()
-end))
-end
+ddBtn.Size = UDim2.new(0, 126, 0, 24)
+ddBtn.Position = UDim2.new(1, -134, 0.5, -12)
+ddBtn.Text = options[currentIdx].label .. " <>"
 
 trackConn(ddBtn.MouseButton1Click:Connect(function()
-local nextVis = not menu.Visible
-closeAllDropdowns()
-if nextVis then syncPos() end
-menu.Visible = nextVis
-end))
-trackConn(contentScroll:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
-if menu.Visible then syncPos() end
-end))
-trackConn(mainFrame:GetPropertyChangedSignal("Position"):Connect(function()
-if menu.Visible then syncPos() end
+currentIdx = (currentIdx % #options) + 1
+local chosen = options[currentIdx]
+ddBtn.Text = chosen.label .. " <>"
+if onSelect then onSelect(chosen.value) end
+saveConfig()
 end))
 end
 
