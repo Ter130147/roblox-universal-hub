@@ -12,9 +12,20 @@ local Camera = workspace.CurrentCamera
 
 local KEY_API_URL = "https://ter-key-api.copter2700.workers.dev"
 local KEY_CACHE_FILE = "TerUniversalHub_Key.json"
+local HEARTBEAT_INTERVAL = 1200 -- 20 นาที
 
 local function canUseFileIo()
 return typeof(writefile) == "function" and typeof(readfile) == "function"
+end
+
+local function clearSavedKey()
+if canUseFileIo() and typeof(delfile) == "function" then
+pcall(function()
+if typeof(isfile) ~= "function" or isfile(KEY_CACHE_FILE) then
+delfile(KEY_CACHE_FILE)
+end
+end)
+end
 end
 
 local function loadSavedKey()
@@ -110,7 +121,7 @@ keyGui.Parent = PlayerGui
 
 local card = Instance.new("Frame")
 card.Size = UDim2.new(0, 340, 0, 236)
-card.Position = UDim2.new(0.5, -170, 0.5, -105)
+card.Position = UDim2.new(0.5, -170, 0.5, -118)
 card.BackgroundColor3 = Color3.fromRGB(26, 10, 15)
 card.BorderSizePixel = 0
 card.Active = true
@@ -167,8 +178,8 @@ statusLbl.TextSize = 11
 statusLbl.Parent = card
 
 local submitBtn = Instance.new("TextButton")
-submitBtn.Size = UDim2.new(1, -28, 0, 42)
-submitBtn.Position = UDim2.new(0, 14, 0, 150)
+submitBtn.Size = UDim2.new(1, -28, 0, 40)
+submitBtn.Position = UDim2.new(0, 14, 0, 146)
 submitBtn.BackgroundColor3 = Color3.fromRGB(205, 28, 44)
 submitBtn.Text = "ยืนยัน Key"
 submitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -180,7 +191,7 @@ Instance.new("UICorner", submitBtn).CornerRadius = UDim.new(0, 10)
 
 local copyHwidBtn = Instance.new("TextButton")
 copyHwidBtn.Size = UDim2.new(1, -28, 0, 28)
-copyHwidBtn.Position = UDim2.new(0, 14, 0, 198)
+copyHwidBtn.Position = UDim2.new(0, 14, 0, 194)
 copyHwidBtn.BackgroundColor3 = Color3.fromRGB(58, 16, 24)
 copyHwidBtn.Text = "คัดลอก HWID เครื่องนี้"
 copyHwidBtn.TextColor3 = Color3.fromRGB(245, 200, 205)
@@ -201,7 +212,7 @@ statusLbl.Text = "HWID: " .. tostring(myHwid)
 end
 end)
 
-	local busy = false
+local busy = false
 local function attemptVerify(candidateKey)
 if busy then return end
 busy = true
@@ -215,12 +226,12 @@ busy = false
 
 if ok then
 saveVerifiedKey(clean)
-local leftText = (info and info.hoursLeft) and (" (เหลือ ~" .. tostring(info.hoursLeft) .. " ชม.)") or ""
+local hrs = (info and info.hoursLeft) and tostring(info.hoursLeft) or nil
 statusLbl.TextColor3 = Color3.fromRGB(90, 255, 140)
-statusLbl.Text = "สำเร็จ: " .. msg .. leftText
+statusLbl.Text = "สำเร็จ: " .. msg .. (hrs and (" (เหลือ ~" .. hrs .. " ชม.)") or "")
 task.wait(0.35)
 if keyGui and keyGui.Parent then keyGui:Destroy() end
-onAuthorized()
+onAuthorized(clean, hrs)
 else
 submitBtn.Text = "ยืนยัน Key"
 statusLbl.TextColor3 = Color3.fromRGB(255, 95, 95)
@@ -244,7 +255,7 @@ task.spawn(attemptVerify, saved)
 end
 end
 
-local function startMainHub()
+local function startMainHub(activeKey, initialHoursLeft)
 if getgenv and getgenv().TerUniversalHubConnections then
 for _, conn in ipairs(getgenv().TerUniversalHubConnections) do
 pcall(function() conn:Disconnect() end)
@@ -269,7 +280,7 @@ Hub.WallCheckEnabled = false
 Hub.LockHolding = false
 Hub.LockBind = "F"
 Hub.AimPartMode = "Head"
-Hub.TargetPriority = "Crosshair" -- "Crosshair" หรือ "Distance"
+Hub.TargetPriority = "Crosshair"
 Hub.CurrentTarget = nil
 Hub.TrackedModels = {}
 Hub.ActiveGuis = {}
@@ -288,12 +299,15 @@ local PlaceProfiles = {
 WallCheckEnabled = true,
 AimPartMode = "Head",
 TargetPriority = "Crosshair",
-MaxLockDistance = 200 },
+MaxLockDistance = 200,
+},
 [126042865144779] = {
 WallCheckEnabled = false,
 AimPartMode = "Head",
 TargetPriority = "Distance",
-MaxLockDistance = 160 } }
+MaxLockDistance = 160,
+},
+}
 
 local function applyPlaceDefaultProfile()
 local profile = PlaceProfiles[game.PlaceId]
@@ -320,7 +334,8 @@ TargetPriority = Hub.TargetPriority,
 MaxLockDistance = Hub.MaxLockDistance,
 MaxItemEspDistance = Hub.MaxItemEspDistance,
 LockSmoothness = Hub.LockSmoothness,
-FOVRadius = Hub.FOVRadius }
+FOVRadius = Hub.FOVRadius,
+}
 pcall(function()
 writefile(CONFIG_FILE, HttpService:JSONEncode(payload))
 end)
@@ -358,32 +373,38 @@ local LockKeyOptions = {
 { label = "ปุ่ม E", value = "E", keyCode = Enum.KeyCode.E, userInputType = Enum.UserInputType.Keyboard },
 { label = "ปุ่ม Q", value = "Q", keyCode = Enum.KeyCode.Q, userInputType = Enum.UserInputType.Keyboard },
 { label = "ปุ่ม X", value = "X", keyCode = Enum.KeyCode.X, userInputType = Enum.UserInputType.Keyboard },
-{ label = "ปุ่ม C", value = "C", keyCode = Enum.KeyCode.C, userInputType = Enum.UserInputType.Keyboard } }
+{ label = "ปุ่ม C", value = "C", keyCode = Enum.KeyCode.C, userInputType = Enum.UserInputType.Keyboard },
+}
 
 local AimPartOptions = {
 { label = "หัว (Head)", value = "Head" },
-{ label = "ลำตัว (HRP)", value = "HumanoidRootPart" } }
+{ label = "ลำตัว (HRP)", value = "HumanoidRootPart" },
+}
 
 local PriorityOptions = {
 { label = "ใกล้เป้าเล็ง", value = "Crosshair" },
-{ label = "ใกล้ตัวละคร", value = "Distance" } }
+{ label = "ใกล้ตัวละคร", value = "Distance" },
+}
 
 local SmoothnessOptions = {
 { label = "นุ่ม (0.14)", value = 0.14 },
 { label = "กลาง (0.24)", value = 0.24 },
 { label = "ไว (0.45)", value = 0.45 },
-{ label = "ตรง (1.00)", value = 1.00 } }
+{ label = "ตรง (1.00)", value = 1.00 },
+}
 
 local DistanceOptions = {
 { label = "100 Studs", value = 100 },
 { label = "160 Studs", value = 160 },
 { label = "250 Studs", value = 250 },
-{ label = "400 Studs", value = 400 } }
+{ label = "400 Studs", value = 400 },
+}
 
 local ItemDistanceOptions = {
 { label = "50m", value = 50 },
 { label = "120m", value = 120 },
-{ label = "300m", value = 300 } }
+{ label = "300m", value = 300 },
+}
 
 local function findOptionLabel(options, value, fallback)
 for _, opt in ipairs(options) do
@@ -869,6 +890,7 @@ local lockConn = nil
 local lockStatusUpdater = nil
 local closeAllDropdowns = nil
 local updateLockIndicator = nil
+local isUnloading = false
 
 local function stopLockLoop()
 Hub.LockHolding = false
@@ -1103,7 +1125,8 @@ local grad = Instance.new("UIGradient")
 grad.Transparency = NumberSequence.new({
 NumberSequenceKeypoint.new(0, 1),
 NumberSequenceKeypoint.new(0.5, 0.25),
-NumberSequenceKeypoint.new(1, 1) })
+NumberSequenceKeypoint.new(1, 1),
+})
 grad.Parent = sweep
 
 task.spawn(function()
@@ -1181,7 +1204,6 @@ targetMarker.Position = UDim2.new(0, screenPos.X, 0, screenPos.Y)
 targetMarker.Visible = true
 end
 
-
 local miniBtn = Instance.new("TextButton")
 miniBtn.Name = "MiniToggle3D"
 miniBtn.Size = UDim2.new(0, 62, 0, 62)
@@ -1205,14 +1227,15 @@ miniStroke.Thickness = 2
 local miniGrad = Instance.new("UIGradient", miniBtn)
 miniGrad.Color = ColorSequence.new({
 ColorSequenceKeypoint.new(0, Color3.fromRGB(165, 20, 30)),
-ColorSequenceKeypoint.new(1, Color3.fromRGB(45, 5, 10)) })
+ColorSequenceKeypoint.new(1, Color3.fromRGB(45, 5, 10)),
+})
 miniGrad.Rotation = 135
 applySweepEffect(miniBtn)
 
 local shadowFrame = Instance.new("Frame")
 shadowFrame.Name = "MainShadow3D"
-shadowFrame.Size = UDim2.new(0, 360, 0, 520)
-shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -252)
+shadowFrame.Size = UDim2.new(0, 360, 0, 440)
+shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -212)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
 shadowFrame.Active = false
@@ -1222,8 +1245,8 @@ Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainPanel3D"
-mainFrame.Size = UDim2.new(0, 360, 0, 520)
-mainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
+mainFrame.Size = UDim2.new(0, 360, 0, 440)
+mainFrame.Position = UDim2.new(0.5, -180, 0.5, -220)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = false
@@ -1240,7 +1263,8 @@ local mainGrad = Instance.new("UIGradient", mainFrame)
 mainGrad.Color = ColorSequence.new({
 ColorSequenceKeypoint.new(0, Color3.fromRGB(58, 10, 16)),
 ColorSequenceKeypoint.new(0.5, Color3.fromRGB(24, 9, 13)),
-ColorSequenceKeypoint.new(1, Color3.fromRGB(14, 5, 8)) })
+ColorSequenceKeypoint.new(1, Color3.fromRGB(14, 5, 8)),
+})
 mainGrad.Rotation = 145
 
 local header = Instance.new("Frame")
@@ -1256,26 +1280,39 @@ header.Parent = mainFrame
 local headerGrad = Instance.new("UIGradient", header)
 headerGrad.Color = ColorSequence.new({
 ColorSequenceKeypoint.new(0, Color3.fromRGB(160, 20, 32)),
-ColorSequenceKeypoint.new(1, Color3.fromRGB(70, 8, 14)) })
+ColorSequenceKeypoint.new(1, Color3.fromRGB(70, 8, 14)),
+})
 headerGrad.Rotation = 90
 applySweepEffect(header)
 
 local titleLabel = Instance.new("TextLabel")
-titleLabel.Size = UDim2.new(1, -90, 1, 0)
-titleLabel.Position = UDim2.new(0, 16, 0, 0)
+titleLabel.Size = UDim2.new(1, -165, 1, 0)
+titleLabel.Position = UDim2.new(0, 14, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Active = false
 titleLabel.Text = "UNIVERSAL 3D HUB"
 titleLabel.TextColor3 = Color3.fromRGB(255, 240, 240)
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Font = Enum.Font.GothamBlack
-titleLabel.TextSize = 16
+titleLabel.TextSize = 15
 titleLabel.ZIndex = 12
 titleLabel.Parent = header
 
+local keyBadge = Instance.new("TextLabel")
+keyBadge.Size = UDim2.new(0, 86, 0, 24)
+keyBadge.Position = UDim2.new(1, -158, 0.5, -12)
+keyBadge.BackgroundColor3 = Color3.fromRGB(36, 7, 11)
+keyBadge.Text = initialHoursLeft and ("เหลือ " .. tostring(initialHoursLeft) .. "ชม.") or "KEY OK"
+keyBadge.TextColor3 = Color3.fromRGB(130, 255, 165)
+keyBadge.Font = Enum.Font.GothamBold
+keyBadge.TextSize = 10
+keyBadge.ZIndex = 14
+keyBadge.Parent = header
+Instance.new("UICorner", keyBadge).CornerRadius = UDim.new(0, 6)
+
 local hideBtn = Instance.new("TextButton")
 hideBtn.Size = UDim2.new(0, 56, 0, 28)
-hideBtn.Position = UDim2.new(1, -68, 0.5, -14)
+hideBtn.Position = UDim2.new(1, -66, 0.5, -14)
 hideBtn.BackgroundColor3 = Color3.fromRGB(45, 7, 11)
 hideBtn.Text = "ซ่อน"
 hideBtn.TextColor3 = Color3.fromRGB(255, 190, 190)
@@ -1290,10 +1327,23 @@ local hideStroke = Instance.new("UIStroke", hideBtn)
 hideStroke.Color = Color3.fromRGB(220, 50, 65)
 hideStroke.Thickness = 1.2
 
+local tabBar = Instance.new("Frame")
+tabBar.Name = "TabBar"
+tabBar.Size = UDim2.new(1, -24, 0, 32)
+tabBar.Position = UDim2.new(0, 12, 0, 54)
+tabBar.BackgroundTransparency = 1
+tabBar.ZIndex = 9
+tabBar.Parent = mainFrame
+
+local tabLayout = Instance.new("UIListLayout", tabBar)
+tabLayout.FillDirection = Enum.FillDirection.Horizontal
+tabLayout.Padding = UDim.new(0, 8)
+tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
 local listHolder = Instance.new("ScrollingFrame")
 listHolder.Name = "FunctionList"
-listHolder.Size = UDim2.new(1, -24, 1, -64)
-listHolder.Position = UDim2.new(0, 12, 0, 56)
+listHolder.Size = UDim2.new(1, -24, 1, -102)
+listHolder.Position = UDim2.new(0, 12, 0, 92)
 listHolder.BackgroundTransparency = 1
 listHolder.ScrollBarThickness = 4
 listHolder.ScrollBarImageColor3 = Color3.fromRGB(210, 35, 50)
@@ -1304,7 +1354,7 @@ listHolder.ZIndex = 8
 listHolder.Parent = mainFrame
 
 local layout = Instance.new("UIListLayout", listHolder)
-layout.Padding = UDim.new(0, 10)
+layout.Padding = UDim.new(0, 8)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 listHolder.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 8)
@@ -1321,6 +1371,71 @@ end)
 
 local modalButtons = { miniBtn, hideBtn }
 local dropdownMenus = {}
+local tabFrames = {}
+local tabButtons = {}
+
+local function switchTab(tabName)
+for name, frame in pairs(tabFrames) do
+frame.Visible = (name == tabName)
+end
+for name, btn in pairs(tabButtons) do
+local active = (name == tabName)
+btn.BackgroundColor3 = active and Color3.fromRGB(205, 28, 44) or Color3.fromRGB(42, 13, 19)
+btn.TextColor3 = active and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(215, 180, 185)
+end
+listHolder.CanvasPosition = Vector2.new(0, 0)
+task.defer(function()
+listHolder.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 8)
+end)
+end
+
+for idx, tabInfo in ipairs({
+{ id = "ESP", label = "ESP" },
+{ id = "Aim", label = "Aim" },
+{ id = "System", label = "System" },
+}) do
+local tBtn = Instance.new("TextButton")
+tBtn.Size = UDim2.new(0.3333, -6, 1, 0)
+tBtn.LayoutOrder = idx
+tBtn.BackgroundColor3 = (idx == 1) and Color3.fromRGB(205, 28, 44) or Color3.fromRGB(42, 13, 19)
+tBtn.Text = tabInfo.label
+tBtn.TextColor3 = (idx == 1) and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(215, 180, 185)
+tBtn.Font = Enum.Font.GothamBlack
+tBtn.TextSize = 12
+tBtn.Active = true
+tBtn.Modal = true
+tBtn.AutoButtonColor = false
+tBtn.ZIndex = 12
+tBtn.Parent = tabBar
+Instance.new("UICorner", tBtn).CornerRadius = UDim.new(0, 8)
+table.insert(modalButtons, tBtn)
+tabButtons[tabInfo.id] = tBtn
+
+local container = Instance.new("Frame")
+container.Name = tabInfo.id .. "Tab"
+container.Size = UDim2.new(1, 0, 0, 0)
+container.AutomaticSize = Enum.AutomaticSize.Y
+container.BackgroundTransparency = 1
+container.Visible = (idx == 1)
+container.ZIndex = 8
+container.Parent = listHolder
+
+local cLayout = Instance.new("UIListLayout", container)
+cLayout.Padding = UDim.new(0, 8)
+cLayout.SortOrder = Enum.SortOrder.LayoutOrder
+cLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+if container.Visible then
+listHolder.CanvasSize = UDim2.new(0, 0, 0, cLayout.AbsoluteContentSize.Y + 8)
+end
+end)
+
+tabFrames[tabInfo.id] = container
+
+trackConn(tBtn.MouseButton1Click:Connect(function()
+if closeAllDropdowns then closeAllDropdowns() end
+switchTab(tabInfo.id)
+end))
+end
 
 closeAllDropdowns = function()
 for _, menu in ipairs(dropdownMenus) do
@@ -1347,8 +1462,13 @@ end
 end
 
 local function unloadHub()
+if isUnloading then return end
+isUnloading = true
 stopLockLoop()
 clearAllEsp()
+for _, menu in ipairs(dropdownMenus) do
+if menu and menu.Parent then menu:Destroy() end
+end
 for _, conn in ipairs(activeConnections) do
 pcall(function() conn:Disconnect() end)
 end
@@ -1363,9 +1483,6 @@ end
 
 trackConn(hideBtn.MouseButton1Click:Connect(function()
 setPanelVisible(false)
-end))
-
-setPanelVisible(not mainFrame.Visible)
 end))
 
 trackConn(miniBtn.MouseButton1Click:Connect(function()
@@ -1391,16 +1508,16 @@ end))
 makeDraggable(header, mainFrame)
 makeDraggable(miniBtn, miniBtn)
 
-local function addToggle(labelText, defaultState, callback)
+local function addToggle(parentTab, labelText, defaultState, callback)
 local state = defaultState == true
 
 local row = Instance.new("Frame")
-row.Size = UDim2.new(1, 0, 0, 48)
+row.Size = UDim2.new(1, 0, 0, 44)
 row.BackgroundColor3 = Color3.fromRGB(38, 12, 18)
 row.BorderSizePixel = 0
 row.Active = false
 row.ZIndex = 9
-row.Parent = listHolder
+row.Parent = parentTab
 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
 local rowStroke = Instance.new("UIStroke", row)
 rowStroke.Color = Color3.fromRGB(120, 22, 32)
@@ -1420,8 +1537,8 @@ label.ZIndex = 10
 label.Parent = row
 
 local switchBtn = Instance.new("TextButton")
-switchBtn.Size = UDim2.new(0, 62, 0, 30)
-switchBtn.Position = UDim2.new(1, -74, 0.5, -15)
+switchBtn.Size = UDim2.new(0, 62, 0, 28)
+switchBtn.Position = UDim2.new(1, -74, 0.5, -14)
 switchBtn.BackgroundColor3 = state and Color3.fromRGB(210, 28, 42) or Color3.fromRGB(55, 22, 28)
 switchBtn.Text = state and "ON" or "OFF"
 switchBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -1464,17 +1581,17 @@ task.spawn(callback, true)
 end
 end
 
-local function addFovSlider(minVal, maxVal, currentVal, onChanged)
+local function addFovSlider(parentTab, minVal, maxVal, currentVal, onChanged)
 local val = math.clamp(currentVal, minVal, maxVal)
 
 local row = Instance.new("Frame")
 row.Name = "FovSliderRow"
-row.Size = UDim2.new(1, 0, 0, 52)
+row.Size = UDim2.new(1, 0, 0, 50)
 row.BackgroundColor3 = Color3.fromRGB(38, 12, 18)
 row.BorderSizePixel = 0
 row.Active = false
 row.ZIndex = 9
-row.Parent = listHolder
+row.Parent = parentTab
 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
 local rowStroke = Instance.new("UIStroke", row)
 rowStroke.Color = Color3.fromRGB(120, 22, 32)
@@ -1508,7 +1625,7 @@ valLabel.Parent = row
 
 local track = Instance.new("TextButton")
 track.Size = UDim2.new(1, -28, 0, 14)
-track.Position = UDim2.new(0, 14, 0, 30)
+track.Position = UDim2.new(0, 14, 0, 28)
 track.BackgroundColor3 = Color3.fromRGB(22, 7, 10)
 track.Text = ""
 track.Active = true
@@ -1567,15 +1684,15 @@ end))
 if onChanged then onChanged(val) end
 end
 
-local function addDropdownRow(rowName, labelText, options, defaultText, zBase, onSelect)
+local function addDropdownRow(parentTab, rowName, labelText, options, defaultText, zBase, onSelect)
 local row = Instance.new("Frame")
 row.Name = rowName
-row.Size = UDim2.new(1, 0, 0, 48)
+row.Size = UDim2.new(1, 0, 0, 44)
 row.BackgroundColor3 = Color3.fromRGB(38, 12, 18)
 row.BorderSizePixel = 0
 row.Active = false
 row.ZIndex = zBase
-row.Parent = listHolder
+row.Parent = parentTab
 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
 local rowStroke = Instance.new("UIStroke", row)
 rowStroke.Color = Color3.fromRGB(120, 22, 32)
@@ -1594,11 +1711,10 @@ label.TextSize = 13
 label.ZIndex = zBase + 1
 label.Parent = row
 
-local statusBadge = nil
 if rowName == "LockBindRow" then
-statusBadge = Instance.new("TextLabel")
-statusBadge.Size = UDim2.new(0, 56, 0, 24)
-statusBadge.Position = UDim2.new(1, -184, 0.5, -12)
+local statusBadge = Instance.new("TextLabel")
+statusBadge.Size = UDim2.new(0, 52, 0, 22)
+statusBadge.Position = UDim2.new(1, -180, 0.5, -11)
 statusBadge.BackgroundColor3 = Color3.fromRGB(55, 22, 28)
 statusBadge.Text = "ปล่อย"
 statusBadge.TextColor3 = Color3.fromRGB(220, 190, 190)
@@ -1616,8 +1732,8 @@ end
 end
 
 local dropdownBtn = Instance.new("TextButton")
-dropdownBtn.Size = UDim2.new(0, 114, 0, 30)
-dropdownBtn.Position = UDim2.new(1, -124, 0.5, -15)
+dropdownBtn.Size = UDim2.new(0, 114, 0, 28)
+dropdownBtn.Position = UDim2.new(1, -124, 0.5, -14)
 dropdownBtn.BackgroundColor3 = Color3.fromRGB(85, 14, 22)
 dropdownBtn.Text = defaultText .. " v"
 dropdownBtn.TextColor3 = Color3.fromRGB(255, 240, 240)
@@ -1645,6 +1761,12 @@ menuFrame.Visible = false
 menuFrame.Active = true
 menuFrame.ZIndex = 120
 menuFrame.Parent = screenGui
+Instance.new("UICorner", menuFrame).CornerRadius = UDim.new(0, 8)
+local menuStroke = Instance.new("UIStroke", menuFrame)
+menuStroke.Color = Color3.fromRGB(220, 60, 75)
+menuStroke.Thickness = 1.5
+
+table.insert(dropdownMenus, menuFrame)
 
 local function syncMenuPos()
 if dropdownBtn and dropdownBtn.Parent then
@@ -1653,12 +1775,6 @@ local absSize = dropdownBtn.AbsoluteSize
 menuFrame.Position = UDim2.new(0, absPos.X, 0, absPos.Y + absSize.Y + 4)
 end
 end
-Instance.new("UICorner", menuFrame).CornerRadius = UDim.new(0, 8)
-local menuStroke = Instance.new("UIStroke", menuFrame)
-menuStroke.Color = Color3.fromRGB(220, 60, 75)
-menuStroke.Thickness = 1.5
-
-table.insert(dropdownMenus, menuFrame)
 
 local menuLayout = Instance.new("UIListLayout", menuFrame)
 menuLayout.Padding = UDim.new(0, 2)
@@ -1681,7 +1797,7 @@ optBtn.TextSize = 11
 optBtn.Active = true
 optBtn.Modal = true
 optBtn.AutoButtonColor = false
-optBtn.ZIndex = zBase + 45
+optBtn.ZIndex = 125
 optBtn.Parent = menuFrame
 Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 6)
 
@@ -1705,26 +1821,22 @@ menuFrame.Visible = nextState
 end))
 
 trackConn(listHolder:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
-if menuFrame.Visible then
-syncMenuPos()
-end
+if menuFrame.Visible then syncMenuPos() end
 end))
 
 trackConn(mainFrame:GetPropertyChangedSignal("Position"):Connect(function()
-if menuFrame.Visible then
-syncMenuPos()
-end
+if menuFrame.Visible then syncMenuPos() end
 end))
 end
 
-local function addActionButton(labelText, btnText, bgColor, callback)
+local function addActionButton(parentTab, labelText, btnText, bgColor, callback)
 local row = Instance.new("Frame")
 row.Size = UDim2.new(1, 0, 0, 44)
 row.BackgroundColor3 = Color3.fromRGB(38, 12, 18)
 row.BorderSizePixel = 0
 row.Active = false
 row.ZIndex = 9
-row.Parent = listHolder
+row.Parent = parentTab
 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
 local rowStroke = Instance.new("UIStroke", row)
 rowStroke.Color = Color3.fromRGB(120, 22, 32)
@@ -1769,72 +1881,97 @@ if callback then callback() end
 end))
 end
 
-addToggle("โครงศัตรูสีแดง (Red Outline)", Hub.RedOutlineEnabled, function(enabled)
+local espTab = tabFrames.ESP
+local aimTab = tabFrames.Aim
+local sysTab = tabFrames.System
+
+addToggle(espTab, "โครงศัตรูสีแดง (Red Outline)", Hub.RedOutlineEnabled, function(enabled)
 Hub.SetRedOutline(enabled)
 end)
 
-addToggle("ชื่อ HP และระยะทั้งแมพ", Hub.NametagsEnabled, function(enabled)
+addToggle(espTab, "ชื่อ HP และระยะทั้งแมพ", Hub.NametagsEnabled, function(enabled)
 Hub.SetNametags(enabled)
 end)
 
-addToggle("แสดงชื่อไอเทมตามแมพ", Hub.ItemEspEnabled, function(enabled)
+addToggle(espTab, "แสดงชื่อไอเทมตามแมพ", Hub.ItemEspEnabled, function(enabled)
 Hub.SetItemEsp(enabled)
 end)
 
-addDropdownRow("ItemDistRow", "ระยะแสดงชื่อไอเทม", ItemDistanceOptions, findOptionLabel(ItemDistanceOptions, Hub.MaxItemEspDistance, "120m"), 20, function(val)
+addDropdownRow(espTab, "ItemDistRow", "ระยะแสดงชื่อไอเทม", ItemDistanceOptions, findOptionLabel(ItemDistanceOptions, Hub.MaxItemEspDistance, "120m"), 20, function(val)
 Hub.MaxItemEspDistance = tonumber(val) or 120
 scanMapItems()
 end)
 
-addToggle("เช็กกำแพงก่อนล็อก (Wall Check)", Hub.WallCheckEnabled, function(enabled)
+addActionButton(espTab, "รีเซ็ตป้ายชื่อและโครง ESP", "ล้าง ESP", Color3.fromRGB(130, 18, 28), function()
+Hub.ResetEsp()
+end)
+
+addToggle(aimTab, "เช็กกำแพงก่อนล็อก (Wall Check)", Hub.WallCheckEnabled, function(enabled)
 Hub.WallCheckEnabled = enabled
 saveConfig()
 end)
 
-addToggle("ล็อกเฉพาะในวงเล็ง FOV", Hub.FovOnlyLock, function(enabled)
+addToggle(aimTab, "ล็อกเฉพาะในวงเล็ง FOV", Hub.FovOnlyLock, function(enabled)
 Hub.FovOnlyLock = enabled
-if enabled then
-fovRing.Visible = true
-end
+if enabled then fovRing.Visible = true end
 saveConfig()
 end)
 
-addFovSlider(50, 400, Hub.FOVRadius, function(newRadius)
+addFovSlider(aimTab, 50, 400, Hub.FOVRadius, function(newRadius)
 Hub.FOVRadius = newRadius
 updateFovRingSize()
 end)
 
-addDropdownRow("LockBindRow", "ปุ่มกดค้างล็อกเป้า", LockKeyOptions, findOptionLabel(LockKeyOptions, Hub.LockBind, "ปุ่ม F"), 18, function(val)
+addDropdownRow(aimTab, "LockBindRow", "ปุ่มกดค้างล็อกเป้า", LockKeyOptions, findOptionLabel(LockKeyOptions, Hub.LockBind, "ปุ่ม F"), 18, function(val)
 stopLockLoop()
 Hub.LockBind = val
 end)
 
-addDropdownRow("AimPartRow", "จุดเล็งเป้าหมาย", AimPartOptions, findOptionLabel(AimPartOptions, Hub.AimPartMode, "หัว (Head)"), 16, function(val)
+addDropdownRow(aimTab, "AimPartRow", "จุดเล็งเป้าหมาย", AimPartOptions, findOptionLabel(AimPartOptions, Hub.AimPartMode, "หัว (Head)"), 16, function(val)
 Hub.AimPartMode = val
 end)
 
-addDropdownRow("PriorityRow", "ลำดับความสำคัญเป้า", PriorityOptions, findOptionLabel(PriorityOptions, Hub.TargetPriority, "ใกล้เป้าเล็ง"), 15, function(val)
+addDropdownRow(aimTab, "PriorityRow", "ลำดับความสำคัญเป้า", PriorityOptions, findOptionLabel(PriorityOptions, Hub.TargetPriority, "ใกล้เป้าเล็ง"), 15, function(val)
 Hub.TargetPriority = val
 end)
 
-addDropdownRow("SmoothRow", "ความนุ่มของกล้อง", SmoothnessOptions, findOptionLabel(SmoothnessOptions, Hub.LockSmoothness, "กลาง (0.24)"), 14, function(val)
+addDropdownRow(aimTab, "SmoothRow", "ความนุ่มของกล้อง", SmoothnessOptions, findOptionLabel(SmoothnessOptions, Hub.LockSmoothness, "กลาง (0.24)"), 14, function(val)
 Hub.LockSmoothness = tonumber(val) or 0.24
 end)
 
-addDropdownRow("DistRow", "ระยะล็อกสูงสุด", DistanceOptions, findOptionLabel(DistanceOptions, Hub.MaxLockDistance, "160 Studs"), 12, function(val)
+addDropdownRow(aimTab, "DistRow", "ระยะล็อกสูงสุด", DistanceOptions, findOptionLabel(DistanceOptions, Hub.MaxLockDistance, "160 Studs"), 12, function(val)
 Hub.MaxLockDistance = tonumber(val) or 160
 end)
 
-addToggle("แสดงวงเล็ง FOV Ring", false, function(enabled)
+addToggle(aimTab, "แสดงวงเล็ง FOV Ring", false, function(enabled)
 fovRing.Visible = enabled
 end)
 
-addActionButton("รีเซ็ตป้ายชื่อและโครง ESP", "ล้าง ESP", Color3.fromRGB(130, 18, 28), function()
-Hub.ResetEsp()
+addActionButton(sysTab, "ล้าง Key ที่จำไว้และกรอกใหม่", "ล้าง Key", Color3.fromRGB(130, 18, 28), function()
+clearSavedKey()
+unloadHub()
+promptForValidKey(startMainHub)
 end)
 
-addActionButton("ปิดสคริปต์และลบ UI ออกจากเกม", "Unload", Color3.fromRGB(75, 10, 15), function()
+addActionButton(sysTab, "ปิดสคริปต์และลบ UI ออกจากเกม", "Unload", Color3.fromRGB(75, 10, 15), function()
 unloadHub()
+end)
+
+-- Periodic Heartbeat: ตรวจเช็กสถานะคีย์กับ Worker ซ้ำทุก 20 นาที
+task.spawn(function()
+while not isUnloading and screenGui and screenGui.Parent do
+task.wait(HEARTBEAT_INTERVAL)
+if isUnloading or not screenGui or not screenGui.Parent then break end
+local ok, _, info = verifyKeyRemote(activeKey)
+if not ok then
+clearSavedKey()
+unloadHub()
+promptForValidKey(startMainHub)
+break
+elseif info and info.hoursLeft then
+keyBadge.Text = "เหลือ " .. tostring(info.hoursLeft) .. "ชม."
+end
+end
 end)
 end
 
