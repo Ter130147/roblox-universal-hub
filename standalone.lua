@@ -265,15 +265,12 @@ local PlaceProfiles = {
 WallCheckEnabled = true,
 AimPartMode = "Head",
 TargetPriority = "Crosshair",
-MaxLockDistance = 200,
-},
+MaxLockDistance = 200 },
 [126042865144779] = {
 WallCheckEnabled = false,
 AimPartMode = "Head",
 TargetPriority = "Distance",
-MaxLockDistance = 160,
-},
-}
+MaxLockDistance = 160 } }
 
 local function applyPlaceDefaultProfile()
 local profile = PlaceProfiles[game.PlaceId]
@@ -300,8 +297,7 @@ TargetPriority = Hub.TargetPriority,
 MaxLockDistance = Hub.MaxLockDistance,
 MaxItemEspDistance = Hub.MaxItemEspDistance,
 LockSmoothness = Hub.LockSmoothness,
-FOVRadius = Hub.FOVRadius,
-}
+FOVRadius = Hub.FOVRadius }
 pcall(function()
 writefile(CONFIG_FILE, HttpService:JSONEncode(payload))
 end)
@@ -339,38 +335,32 @@ local LockKeyOptions = {
 { label = "ปุ่ม E", value = "E", keyCode = Enum.KeyCode.E, userInputType = Enum.UserInputType.Keyboard },
 { label = "ปุ่ม Q", value = "Q", keyCode = Enum.KeyCode.Q, userInputType = Enum.UserInputType.Keyboard },
 { label = "ปุ่ม X", value = "X", keyCode = Enum.KeyCode.X, userInputType = Enum.UserInputType.Keyboard },
-{ label = "ปุ่ม C", value = "C", keyCode = Enum.KeyCode.C, userInputType = Enum.UserInputType.Keyboard },
-}
+{ label = "ปุ่ม C", value = "C", keyCode = Enum.KeyCode.C, userInputType = Enum.UserInputType.Keyboard } }
 
 local AimPartOptions = {
 { label = "หัว (Head)", value = "Head" },
-{ label = "ลำตัว (HRP)", value = "HumanoidRootPart" },
-}
+{ label = "ลำตัว (HRP)", value = "HumanoidRootPart" } }
 
 local PriorityOptions = {
 { label = "ใกล้เป้าเล็ง", value = "Crosshair" },
-{ label = "ใกล้ตัวละคร", value = "Distance" },
-}
+{ label = "ใกล้ตัวละคร", value = "Distance" } }
 
 local SmoothnessOptions = {
 { label = "นุ่ม (0.14)", value = 0.14 },
 { label = "กลาง (0.24)", value = 0.24 },
 { label = "ไว (0.45)", value = 0.45 },
-{ label = "ตรง (1.00)", value = 1.00 },
-}
+{ label = "ตรง (1.00)", value = 1.00 } }
 
 local DistanceOptions = {
 { label = "100 Studs", value = 100 },
 { label = "160 Studs", value = 160 },
 { label = "250 Studs", value = 250 },
-{ label = "400 Studs", value = 400 },
-}
+{ label = "400 Studs", value = 400 } }
 
 local ItemDistanceOptions = {
 { label = "50m", value = 50 },
 { label = "120m", value = 120 },
-{ label = "300m", value = 300 },
-}
+{ label = "300m", value = 300 } }
 
 local function findOptionLabel(options, value, fallback)
 for _, opt in ipairs(options) do
@@ -1090,8 +1080,7 @@ local grad = Instance.new("UIGradient")
 grad.Transparency = NumberSequence.new({
 NumberSequenceKeypoint.new(0, 1),
 NumberSequenceKeypoint.new(0.5, 0.25),
-NumberSequenceKeypoint.new(1, 1),
-})
+NumberSequenceKeypoint.new(1, 1) })
 grad.Parent = sweep
 
 task.spawn(function()
@@ -1193,8 +1182,7 @@ miniStroke.Thickness = 2
 local miniGrad = Instance.new("UIGradient", miniBtn)
 miniGrad.Color = ColorSequence.new({
 ColorSequenceKeypoint.new(0, Color3.fromRGB(165, 20, 30)),
-ColorSequenceKeypoint.new(1, Color3.fromRGB(45, 5, 10)),
-})
+ColorSequenceKeypoint.new(1, Color3.fromRGB(45, 5, 10)) })
 miniGrad.Rotation = 135
 applySweepEffect(miniBtn)
 
@@ -1229,8 +1217,7 @@ local mainGrad = Instance.new("UIGradient", mainFrame)
 mainGrad.Color = ColorSequence.new({
 ColorSequenceKeypoint.new(0, Color3.fromRGB(58, 10, 16)),
 ColorSequenceKeypoint.new(0.5, Color3.fromRGB(24, 9, 13)),
-ColorSequenceKeypoint.new(1, Color3.fromRGB(14, 5, 8)),
-})
+ColorSequenceKeypoint.new(1, Color3.fromRGB(14, 5, 8)) })
 mainGrad.Rotation = 145
 
 local header = Instance.new("Frame")
@@ -1246,8 +1233,7 @@ header.Parent = mainFrame
 local headerGrad = Instance.new("UIGradient", header)
 headerGrad.Color = ColorSequence.new({
 ColorSequenceKeypoint.new(0, Color3.fromRGB(160, 20, 32)),
-ColorSequenceKeypoint.new(1, Color3.fromRGB(70, 8, 14)),
-})
+ColorSequenceKeypoint.new(1, Color3.fromRGB(70, 8, 14)) })
 headerGrad.Rotation = 90
 applySweepEffect(header)
 
@@ -1324,7 +1310,6 @@ end
 local function setPanelVisible(visible)
 mainFrame.Visible = visible
 shadowFrame.Visible = visible
-toggleUiBtn.Text = visible and "ซ่อน UI" or "เปิด UI"
 if not visible and closeAllDropdowns then
 closeAllDropdowns()
 end
@@ -1357,7 +1342,6 @@ trackConn(hideBtn.MouseButton1Click:Connect(function()
 setPanelVisible(false)
 end))
 
-trackConn(toggleUiBtn.MouseButton1Click:Connect(function()
 setPanelVisible(not mainFrame.Visible)
 end))
 
