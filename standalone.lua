@@ -1054,7 +1054,7 @@ lockConn:Disconnect()
 lockConn = nil
 end
 
-lockConn = trackConn(RunService.RenderStepped:Connect(function()
+lockConn = trackConn(RunService.RenderStepped:Connect(function(dt)
 if not isBindCurrentlyHeld() then
 stopLockLoop()
 return
@@ -1085,9 +1085,14 @@ Hub.CurrentTarget = aimPart
 if updateLockIndicator then
 updateLockIndicator(aimPart)
 end
+
+local stepDt = math.clamp(tonumber(dt) or (1 / 60), 0.001, 0.05)
+local smoothFactor = math.clamp(tonumber(Hub.LockSmoothness) or 0.24, 0.05, 1)
+local alpha = (smoothFactor >= 0.99) and 1 or (1 - math.exp(-(smoothFactor * 42) * stepDt))
+
 local camPos = Camera.CFrame.Position
 local lookCFrame = CFrame.lookAt(camPos, aimPart.Position)
-Camera.CFrame = Camera.CFrame:Lerp(lookCFrame, Hub.LockSmoothness)
+Camera.CFrame = CFrame.new(camPos, Camera.CFrame.LookVector:Lerp(lookCFrame.LookVector, alpha) + camPos)
 end))
 end
 
