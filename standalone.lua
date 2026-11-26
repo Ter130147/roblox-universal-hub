@@ -51,6 +51,20 @@ local AimPartOptions = {
 { label = "ลำตัว (HRP)", value = "HumanoidRootPart" },
 }
 
+local SmoothnessOptions = {
+{ label = "นุ่ม (0.14)", value = 0.14 },
+{ label = "กลาง (0.24)", value = 0.24 },
+{ label = "ไว (0.45)", value = 0.45 },
+{ label = "ตรง (1.00)", value = 1.00 },
+}
+
+local DistanceOptions = {
+{ label = "100 Studs", value = 100 },
+{ label = "160 Studs", value = 160 },
+{ label = "250 Studs", value = 250 },
+{ label = "400 Studs", value = 400 },
+}
+
 local function getActiveBindConfig()
 for _, opt in ipairs(LockKeyOptions) do
 if opt.value == Hub.LockBind then
@@ -116,11 +130,9 @@ end
 return nil
 end
 
--- คืนค่า: true = ทีมเดียวกัน, false = ฝ่ายศัตรู / โหมดมีแต่ศัตรู (FFA)
 local function isTeammate(player, model)
 if not player or player == LocalPlayer then return false end
 
--- กรณีแมพใช้ระบบ Teams มาตรฐานของ Roblox
 if #Teams:GetTeams() > 0 then
 if LocalPlayer.Team ~= nil and player.Team ~= nil then
 return player.Team == LocalPlayer.Team
@@ -131,22 +143,20 @@ end
 return false
 end
 
--- กรณีแมพกำหนดทีมผ่าน Attribute หรือ Folder
 local myTag = getCustomTeamTag(LocalPlayer.Character) or getCustomTeamTag(LocalPlayer)
 local theirTag = getCustomTeamTag(model) or getCustomTeamTag(player)
 if myTag and theirTag then
 return myTag == theirTag
 end
 
--- กรณีไม่มีทีม / โหมดมีแต่ศัตรู (FFA) ให้ถือว่าเป็นฝ่ายตรงข้ามทั้งหมด
 return false
 end
 
 local function getTagColor(player, model)
 if isTeammate(player, model) then
-return Color3.fromRGB(60, 255, 110) -- ทีมเดียวกัน = สีเขียว
+return Color3.fromRGB(60, 255, 110)
 else
-return Color3.fromRGB(255, 65, 65)  -- ศัตรู / โหมดมีแต่ศัตรู = สีแดง
+return Color3.fromRGB(255, 65, 65)
 end
 end
 
@@ -184,7 +194,6 @@ if not hum or not head then return end
 local plr = getPlayerFromModel(model)
 local friendly = isTeammate(plr, model)
 
--- โครงสีแดงแสดงเฉพาะฝั่งศัตรู (และทุกคนในโหมดที่มีแต่ศัตรู)
 local existingHl = Hub.ActiveHighlights[model]
 if friendly then
 if existingHl and existingHl.Parent then existingHl:Destroy() end
@@ -212,7 +221,6 @@ end
 existingHl.Enabled = Hub.RedOutlineEnabled
 end
 
--- ป้ายชื่อเหนือหัวแยกสี: ทีมเดียวกันสีเขียว / ศัตรูสีแดง
 local existingGui = Hub.ActiveGuis[model]
 if not existingGui or not existingGui.Parent then
 local oldTag = head:FindFirstChild("MapNametag")
@@ -342,6 +350,34 @@ local lockConn = nil
 local lockStatusUpdater = nil
 local closeAllDropdowns = nil
 
+local function stopLockLoop()
+Hub.LockHolding = false
+Hub.CurrentTarget = nil
+if lockConn then
+lockConn:Disconnect()
+lockConn = nil
+end
+if lockStatusUpdater then
+lockStatusUpdater(false)
+end
+end
+
+local function bindLocalCharacterSafety(char)
+if not char then return end
+stopLockLoop()
+local hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
+if hum then
+trackConn(hum.Died:Connect(stopLockLoop))
+end
+end
+
+if LocalPlayer.Character then
+task.spawn(bindLocalCharacterSafety, LocalPlayer.Character)
+end
+trackConn(LocalPlayer.CharacterAdded:Connect(function(char)
+task.spawn(bindLocalCharacterSafety, char)
+end))
+
 local function getAimPartFromModel(model)
 if not model or isOwnCharacter(model) or isIgnoredContainer(model) then return nil end
 local hum = model:FindFirstChildOfClass("Humanoid")
@@ -379,18 +415,6 @@ end
 end
 
 return nearestPart
-end
-
-local function stopLockLoop()
-Hub.LockHolding = false
-Hub.CurrentTarget = nil
-if lockConn then
-lockConn:Disconnect()
-lockConn = nil
-end
-if lockStatusUpdater then
-lockStatusUpdater(false)
-end
 end
 
 local function startLockHold()
@@ -595,8 +619,8 @@ applySweepEffect(miniBtn)
 
 local shadowFrame = Instance.new("Frame")
 shadowFrame.Name = "MainShadow3D"
-shadowFrame.Size = UDim2.new(0, 360, 0, 445)
-shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -215)
+shadowFrame.Size = UDim2.new(0, 360, 0, 520)
+shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -252)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
 shadowFrame.Active = false
@@ -606,8 +630,8 @@ Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainPanel3D"
-mainFrame.Size = UDim2.new(0, 360, 0, 445)
-mainFrame.Position = UDim2.new(0.5, -180, 0.5, -222)
+mainFrame.Size = UDim2.new(0, 360, 0, 520)
+mainFrame.Position = UDim2.new(0.5, -180, 0.5, -260)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = false
@@ -1024,13 +1048,21 @@ addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศั�
 Hub.SetNametags(enabled)
 end)
 
-addDropdownRow("LockBindRow", "ปุ่มกดค้างล็อกเป้า", LockKeyOptions, "ปุ่ม F", 16, function(val)
+addDropdownRow("LockBindRow", "ปุ่มกดค้างล็อกเป้า", LockKeyOptions, "ปุ่ม F", 18, function(val)
 stopLockLoop()
 Hub.LockBind = val
 end)
 
-addDropdownRow("AimPartRow", "จุดเล็งเป้าหมาย", AimPartOptions, "หัว (Head)", 14, function(val)
+addDropdownRow("AimPartRow", "จุดเล็งเป้าหมาย", AimPartOptions, "หัว (Head)", 16, function(val)
 Hub.AimPartMode = val
+end)
+
+addDropdownRow("SmoothRow", "ความนุ่มของกล้อง", SmoothnessOptions, "กลาง (0.24)", 14, function(val)
+Hub.LockSmoothness = tonumber(val) or 0.24
+end)
+
+addDropdownRow("DistRow", "ระยะล็อกสูงสุด", DistanceOptions, "160 Studs", 12, function(val)
+Hub.MaxLockDistance = tonumber(val) or 160
 end)
 
 addToggle("แสดงวงเล็ง FOV Ring", false, function(enabled)
