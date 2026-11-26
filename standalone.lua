@@ -33,6 +33,7 @@ Hub.WallCheckEnabled = false
 Hub.LockHolding = false
 Hub.LockBind = "F"
 Hub.AimPartMode = "Head"
+Hub.TargetPriority = "Crosshair" -- "Crosshair" หรือ "Distance"
 Hub.CurrentTarget = nil
 Hub.TrackedModels = {}
 Hub.ActiveGuis = {}
@@ -60,7 +61,9 @@ FovOnlyLock = Hub.FovOnlyLock,
 WallCheckEnabled = Hub.WallCheckEnabled,
 LockBind = Hub.LockBind,
 AimPartMode = Hub.AimPartMode,
+TargetPriority = Hub.TargetPriority,
 MaxLockDistance = Hub.MaxLockDistance,
+MaxItemEspDistance = Hub.MaxItemEspDistance,
 LockSmoothness = Hub.LockSmoothness,
 FOVRadius = Hub.FOVRadius,
 }
@@ -86,7 +89,9 @@ if type(data.FovOnlyLock) == "boolean" then Hub.FovOnlyLock = data.FovOnlyLock e
 if type(data.WallCheckEnabled) == "boolean" then Hub.WallCheckEnabled = data.WallCheckEnabled end
 if type(data.LockBind) == "string" then Hub.LockBind = data.LockBind end
 if type(data.AimPartMode) == "string" then Hub.AimPartMode = data.AimPartMode end
+if type(data.TargetPriority) == "string" then Hub.TargetPriority = data.TargetPriority end
 if tonumber(data.MaxLockDistance) then Hub.MaxLockDistance = tonumber(data.MaxLockDistance) end
+if tonumber(data.MaxItemEspDistance) then Hub.MaxItemEspDistance = tonumber(data.MaxItemEspDistance) end
 if tonumber(data.LockSmoothness) then Hub.LockSmoothness = tonumber(data.LockSmoothness) end
 if tonumber(data.FOVRadius) then Hub.FOVRadius = math.clamp(tonumber(data.FOVRadius), 50, 400) end
 end
@@ -107,6 +112,11 @@ local AimPartOptions = {
 { label = "ลำตัว (HRP)", value = "HumanoidRootPart" },
 }
 
+local PriorityOptions = {
+{ label = "ใกล้เป้าเล็ง", value = "Crosshair" },
+{ label = "ใกล้ตัวละคร", value = "Distance" },
+}
+
 local SmoothnessOptions = {
 { label = "นุ่ม (0.14)", value = 0.14 },
 { label = "กลาง (0.24)", value = 0.24 },
@@ -119,6 +129,12 @@ local DistanceOptions = {
 { label = "160 Studs", value = 160 },
 { label = "250 Studs", value = 250 },
 { label = "400 Studs", value = 400 },
+}
+
+local ItemDistanceOptions = {
+{ label = "50m", value = 50 },
+{ label = "120m", value = 120 },
+{ label = "300m", value = 300 },
 }
 
 local function findOptionLabel(options, value, fallback)
@@ -370,12 +386,27 @@ end
 clearAllItemEsp()
 end
 
+local function updateNametagStats(model, billboard, hum, rootPart)
+local statsLbl = billboard:FindFirstChild("StatsLine")
+if not statsLbl then return end
+local hp = hum and math.max(0, math.floor(hum.Health)) or 0
+local maxHp = hum and math.max(1, math.floor(hum.MaxHealth)) or 100
+local distMeters = 0
+local myChar = LocalPlayer.Character
+local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+if myRoot and rootPart then
+distMeters = math.floor((rootPart.Position - myRoot.Position).Magnitude * 0.28)
+end
+statsLbl.Text = string.format("[%d/%d HP | %dm]", hp, maxHp, distMeters)
+end
+
 local function attachVisualsToModel(model)
 if not model or not model:IsA("Model") then return end
 if isOwnCharacter(model) or isIgnoredContainer(model) then return end
 
 local hum = model:FindFirstChildOfClass("Humanoid")
 local head = model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BasePart")
+local rootPart = model:FindFirstChild("HumanoidRootPart") or head
 if not hum or not head then return end
 
 local plr = getPlayerFromModel(model)
@@ -416,15 +447,16 @@ if oldTag then oldTag:Destroy() end
 local billboard = Instance.new("BillboardGui")
 billboard.Name = "MapNametag"
 billboard.Adornee = head
-billboard.Size = UDim2.new(0, 175, 0, 36)
-billboard.StudsOffset = Vector3.new(0, 2.6, 0)
+billboard.Size = UDim2.new(0, 185, 0, 46)
+billboard.StudsOffset = Vector3.new(0, 2.8, 0)
 billboard.AlwaysOnTop = true
 billboard.MaxDistance = 2500
 billboard.Parent = head
 
 local label = Instance.new("TextLabel")
 label.Name = "PlayerName"
-label.Size = UDim2.new(1, 0, 1, 0)
+label.Size = UDim2.new(1, 0, 0.56, 0)
+label.Position = UDim2.new(0, 0, 0, 0)
 label.BackgroundTransparency = 1
 label.Text = plr and (plr.DisplayName .. " (@" .. plr.Name .. ")") or model.Name
 label.TextStrokeTransparency = 0.1
@@ -432,6 +464,19 @@ label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 label.Font = Enum.Font.GothamBlack
 label.TextScaled = true
 label.Parent = billboard
+
+local statsLbl = Instance.new("TextLabel")
+statsLbl.Name = "StatsLine"
+statsLbl.Size = UDim2.new(1, 0, 0.42, 0)
+statsLbl.Position = UDim2.new(0, 0, 0.56, 0)
+statsLbl.BackgroundTransparency = 1
+statsLbl.Text = "[100/100 HP | 0m]"
+statsLbl.TextColor3 = Color3.fromRGB(255, 235, 160)
+statsLbl.TextStrokeTransparency = 0.2
+statsLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+statsLbl.Font = Enum.Font.GothamBold
+statsLbl.TextScaled = true
+statsLbl.Parent = billboard
 
 Hub.ActiveGuis[model] = billboard
 existingGui = billboard
@@ -445,6 +490,7 @@ local lbl = existingGui:FindFirstChild("PlayerName")
 if lbl then
 lbl.TextColor3 = getTagColor(plr, model)
 end
+updateNametagStats(model, existingGui, hum, rootPart)
 
 Hub.TrackedModels[model] = true
 end
@@ -501,6 +547,17 @@ if Hub.ItemEspEnabled then
 scanMapItems()
 end
 end
+
+trackConn(RunService.Heartbeat:Connect(function()
+if not Hub.NametagsEnabled then return end
+for model, gui in pairs(Hub.ActiveGuis) do
+if model and model.Parent and gui and gui.Parent then
+local hum = model:FindFirstChildOfClass("Humanoid")
+local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
+updateNametagStats(model, gui, hum, root)
+end
+end
+end))
 
 trackConn(workspace.DescendantAdded:Connect(function(desc)
 if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
@@ -604,17 +661,22 @@ return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
 end
 end
 
-local function isWithinFov(worldPos)
-if not Hub.FovOnlyLock then return true end
+local function getScreenCenterDistance(worldPos)
 local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
-if not onScreen or screenPos.Z <= 0 then return false end
+if not onScreen or screenPos.Z <= 0 then return nil end
 local viewportSize = Camera.ViewportSize
 local center = Vector2.new(viewportSize.X * 0.5, viewportSize.Y * 0.5)
 local pt = Vector2.new(screenPos.X, screenPos.Y)
-return (pt - center).Magnitude <= Hub.FOVRadius
+return (pt - center).Magnitude
 end
 
--- เช็กว่ามีสิ่งกีดขวางบังสายตาจากกล้องไปยังจุดเล็งหรือไม่ (Wall Check)
+local function isWithinFov(worldPos)
+if not Hub.FovOnlyLock then return true end
+local centerDist = getScreenCenterDistance(worldPos)
+if not centerDist then return false end
+return centerDist <= Hub.FOVRadius
+end
+
 local function isVisibleFromCamera(targetModel, targetPos)
 if not Hub.WallCheckEnabled then return true end
 local origin = Camera.CFrame.Position
@@ -649,8 +711,8 @@ local char = LocalPlayer.Character
 local root = char and char:FindFirstChild("HumanoidRootPart")
 if not root then return nil end
 
-local nearestPart = nil
-local shortestDist = Hub.MaxLockDistance
+local bestPart = nil
+local bestScore = math.huge
 
 for model in pairs(Hub.TrackedModels) do
 if model and model.Parent and not isOwnCharacter(model) and not isIgnoredContainer(model) then
@@ -658,17 +720,24 @@ local plr = getPlayerFromModel(model)
 if not isTeammate(plr, model) then
 local aimPart = getAimPartFromModel(model)
 if aimPart and isWithinFov(aimPart.Position) and isVisibleFromCamera(model, aimPart.Position) then
-local dist = (aimPart.Position - root.Position).Magnitude
-if dist < shortestDist then
-shortestDist = dist
-nearestPart = aimPart
+local worldDist = (aimPart.Position - root.Position).Magnitude
+if worldDist <= Hub.MaxLockDistance then
+local score = worldDist
+if Hub.TargetPriority == "Crosshair" then
+local cDist = getScreenCenterDistance(aimPart.Position)
+score = cDist or math.huge
+end
+if score < bestScore then
+bestScore = score
+bestPart = aimPart
+end
 end
 end
 end
 end
 end
 
-return nearestPart
+return bestPart
 end
 
 local function startLockHold()
@@ -1421,12 +1490,17 @@ addToggle("โครงศัตรูสีแดง (Red Outline)", Hub.RedOut
 Hub.SetRedOutline(enabled)
 end)
 
-addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศัตรูแดง)", Hub.NametagsEnabled, function(enabled)
+addToggle("ชื่อ HP และระยะทั้งแมพ", Hub.NametagsEnabled, function(enabled)
 Hub.SetNametags(enabled)
 end)
 
 addToggle("แสดงชื่อไอเทมตามแมพ", Hub.ItemEspEnabled, function(enabled)
 Hub.SetItemEsp(enabled)
+end)
+
+addDropdownRow("ItemDistRow", "ระยะแสดงชื่อไอเทม", ItemDistanceOptions, findOptionLabel(ItemDistanceOptions, Hub.MaxItemEspDistance, "120m"), 20, function(val)
+Hub.MaxItemEspDistance = tonumber(val) or 120
+scanMapItems()
 end)
 
 addToggle("เช็กกำแพงก่อนล็อก (Wall Check)", Hub.WallCheckEnabled, function(enabled)
@@ -1451,6 +1525,10 @@ end)
 
 addDropdownRow("AimPartRow", "จุดเล็งเป้าหมาย", AimPartOptions, findOptionLabel(AimPartOptions, Hub.AimPartMode, "หัว (Head)"), 16, function(val)
 Hub.AimPartMode = val
+end)
+
+addDropdownRow("PriorityRow", "ลำดับความสำคัญเป้า", PriorityOptions, findOptionLabel(PriorityOptions, Hub.TargetPriority, "ใกล้เป้าเล็ง"), 15, function(val)
+Hub.TargetPriority = val
 end)
 
 addDropdownRow("SmoothRow", "ความนุ่มของกล้อง", SmoothnessOptions, findOptionLabel(SmoothnessOptions, Hub.LockSmoothness, "กลาง (0.24)"), 14, function(val)
