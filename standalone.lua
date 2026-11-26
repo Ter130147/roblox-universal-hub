@@ -109,7 +109,7 @@ keyGui.DisplayOrder = 10000
 keyGui.Parent = PlayerGui
 
 local card = Instance.new("Frame")
-card.Size = UDim2.new(0, 340, 0, 210)
+card.Size = UDim2.new(0, 340, 0, 236)
 card.Position = UDim2.new(0.5, -170, 0.5, -105)
 card.BackgroundColor3 = Color3.fromRGB(26, 10, 15)
 card.BorderSizePixel = 0
@@ -178,7 +178,30 @@ submitBtn.AutoButtonColor = false
 submitBtn.Parent = card
 Instance.new("UICorner", submitBtn).CornerRadius = UDim.new(0, 10)
 
-local busy = false
+local copyHwidBtn = Instance.new("TextButton")
+copyHwidBtn.Size = UDim2.new(1, -28, 0, 28)
+copyHwidBtn.Position = UDim2.new(0, 14, 0, 198)
+copyHwidBtn.BackgroundColor3 = Color3.fromRGB(58, 16, 24)
+copyHwidBtn.Text = "คัดลอก HWID เครื่องนี้"
+copyHwidBtn.TextColor3 = Color3.fromRGB(245, 200, 205)
+copyHwidBtn.Font = Enum.Font.GothamBold
+copyHwidBtn.TextSize = 11
+copyHwidBtn.Parent = card
+Instance.new("UICorner", copyHwidBtn).CornerRadius = UDim.new(0, 8)
+
+copyHwidBtn.MouseButton1Click:Connect(function()
+local myHwid = getDeviceHwid()
+if typeof(setclipboard) == "function" then
+pcall(setclipboard, myHwid)
+statusLbl.TextColor3 = Color3.fromRGB(130, 225, 255)
+statusLbl.Text = "คัดลอก HWID แล้ว: " .. tostring(myHwid)
+else
+statusLbl.TextColor3 = Color3.fromRGB(255, 190, 110)
+statusLbl.Text = "HWID: " .. tostring(myHwid)
+end
+end)
+
+	local busy = false
 local function attemptVerify(candidateKey)
 if busy then return end
 busy = true

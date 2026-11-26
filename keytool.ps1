@@ -1,6 +1,6 @@
 param(
 [Parameter(Mandatory = $false)]
-[ValidateSet("gen", "reset")]
+[ValidateSet("gen", "reset", "list", "del")]
 [string]$Action = "gen",
 
 [Parameter(Mandatory = $false)]
@@ -33,6 +33,26 @@ $url = "$BaseUrl/reset?secret=$([uri]::EscapeDataString($Secret))&key=$([uri]::E
 $res = Invoke-RestMethod -Uri $url -Method Get
 if ($res.ok) {
 Write-Host "Reset HWID success for key: $($res.key)" -ForegroundColor Green
+} else {
+Write-Host "Failed: $($res.message)" -ForegroundColor Red
+}
+} elseif ($Action -eq "list") {
+$url = "$BaseUrl/list?secret=$([uri]::EscapeDataString($Secret))"
+$res = Invoke-RestMethod -Uri $url -Method Get
+if ($res.ok) {
+$res.keys | Format-Table key, days, hwidBound, expired, hoursLeft -AutoSize
+} else {
+Write-Host "Failed: $($res.message)" -ForegroundColor Red
+}
+} elseif ($Action -eq "del") {
+if ([string]::IsNullOrWhiteSpace($Key)) {
+Write-Host "Please specify -Key TER-XXXX-XXXX-XXXX" -ForegroundColor Yellow
+exit 1
+}
+$url = "$BaseUrl/delete?secret=$([uri]::EscapeDataString($Secret))&key=$([uri]::EscapeDataString($Key.Trim().ToUpper()))"
+$res = Invoke-RestMethod -Uri $url -Method Get
+if ($res.ok) {
+Write-Host "Deleted key: $($res.key)" -ForegroundColor Green
 } else {
 Write-Host "Failed: $($res.message)" -ForegroundColor Red
 }
