@@ -1,3 +1,4 @@
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Teams = game:GetService("Teams")
 local RunService = game:GetService("RunService")
@@ -28,6 +29,7 @@ Hub.NametagsEnabled = true
 Hub.RedOutlineEnabled = true
 Hub.ItemEspEnabled = false
 Hub.FovOnlyLock = false
+Hub.WallCheckEnabled = false
 Hub.LockHolding = false
 Hub.LockBind = "F"
 Hub.AimPartMode = "Head"
@@ -41,6 +43,55 @@ Hub.MaxLockDistance = 160
 Hub.MaxItemEspDistance = 120
 Hub.LockSmoothness = 0.24
 Hub.FOVRadius = 120
+
+local CONFIG_FILE = "TerUniversalHub_Config.json"
+
+local function canUseFileIo()
+return typeof(writefile) == "function" and typeof(readfile) == "function"
+end
+
+local function saveConfig()
+if not canUseFileIo() then return end
+local payload = {
+NametagsEnabled = Hub.NametagsEnabled,
+RedOutlineEnabled = Hub.RedOutlineEnabled,
+ItemEspEnabled = Hub.ItemEspEnabled,
+FovOnlyLock = Hub.FovOnlyLock,
+WallCheckEnabled = Hub.WallCheckEnabled,
+LockBind = Hub.LockBind,
+AimPartMode = Hub.AimPartMode,
+MaxLockDistance = Hub.MaxLockDistance,
+LockSmoothness = Hub.LockSmoothness,
+FOVRadius = Hub.FOVRadius,
+}
+pcall(function()
+writefile(CONFIG_FILE, HttpService:JSONEncode(payload))
+end)
+end
+
+local function loadConfig()
+if not canUseFileIo() then return end
+if typeof(isfile) == "function" and not isfile(CONFIG_FILE) then return end
+local ok, raw = pcall(readfile, CONFIG_FILE)
+if not ok or not raw then return end
+local decodedOk, data = pcall(function()
+return HttpService:JSONDecode(raw)
+end)
+if not decodedOk or type(data) ~= "table" then return end
+
+if type(data.NametagsEnabled) == "boolean" then Hub.NametagsEnabled = data.NametagsEnabled end
+if type(data.RedOutlineEnabled) == "boolean" then Hub.RedOutlineEnabled = data.RedOutlineEnabled end
+if type(data.ItemEspEnabled) == "boolean" then Hub.ItemEspEnabled = data.ItemEspEnabled end
+if type(data.FovOnlyLock) == "boolean" then Hub.FovOnlyLock = data.FovOnlyLock end
+if type(data.WallCheckEnabled) == "boolean" then Hub.WallCheckEnabled = data.WallCheckEnabled end
+if type(data.LockBind) == "string" then Hub.LockBind = data.LockBind end
+if type(data.AimPartMode) == "string" then Hub.AimPartMode = data.AimPartMode end
+if tonumber(data.MaxLockDistance) then Hub.MaxLockDistance = tonumber(data.MaxLockDistance) end
+if tonumber(data.LockSmoothness) then Hub.LockSmoothness = tonumber(data.LockSmoothness) end
+if tonumber(data.FOVRadius) then Hub.FOVRadius = math.clamp(tonumber(data.FOVRadius), 50, 400) end
+end
+
+loadConfig()
 
 local LockKeyOptions = {
 { label = "ปุ่ม F", value = "F", keyCode = Enum.KeyCode.F, userInputType = Enum.UserInputType.Keyboard },
@@ -69,6 +120,15 @@ local DistanceOptions = {
 { label = "250 Studs", value = 250 },
 { label = "400 Studs", value = 400 },
 }
+
+local function findOptionLabel(options, value, fallback)
+for _, opt in ipairs(options) do
+if opt.value == value then
+return opt.label
+end
+end
+return fallback
+end
 
 local function getActiveBindConfig()
 for _, opt in ipairs(LockKeyOptions) do
@@ -177,7 +237,6 @@ Hub.ActiveHighlights[model] = nil
 Hub.TrackedModels[model] = nil
 end
 
--- ระบบแสดงชื่อไอเทมตามแมพ (Item ESP)
 local function getItemDisplayPart(obj)
 if not obj or not obj.Parent or isIgnoredContainer(obj) then return nil end
 if LocalPlayer.Character and obj:IsDescendantOf(LocalPlayer.Character) then return nil end
@@ -297,11 +356,6 @@ attachItemTag(desc)
 end
 end
 end
-end
-
-function Hub.SetItemEsp(state)
-Hub.ItemEspEnabled = state == true
-scanMapItems()
 end
 
 local function clearAllEsp()
@@ -425,11 +479,19 @@ end
 function Hub.SetRedOutline(state)
 Hub.RedOutlineEnabled = state == true
 refreshAllTracked()
+saveConfig()
 end
 
 function Hub.SetNametags(state)
 Hub.NametagsEnabled = state == true
 refreshAllTracked()
+saveConfig()
+end
+
+function Hub.SetItemEsp(state)
+Hub.ItemEspEnabled = state == true
+scanMapItems()
+saveConfig()
 end
 
 function Hub.ResetEsp()
@@ -494,6 +556,9 @@ trackConn(LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTr
 trackConn(LocalPlayer.AttributeChanged:Connect(refreshAllTracked))
 
 scanInitialModels()
+if Hub.ItemEspEnabled then
+scanMapItems()
+end
 
 local lockConn = nil
 local lockStatusUpdater = nil
@@ -549,6 +614,36 @@ local pt = Vector2.new(screenPos.X, screenPos.Y)
 return (pt - center).Magnitude <= Hub.FOVRadius
 end
 
+-- เช็กว่ามีสิ่งกีดขวางบังสายตาจากกล้องไปยังจุดเล็งหรือไม่ (Wall Check)
+local function isVisibleFromCamera(targetModel, targetPos)
+if not Hub.WallCheckEnabled then return true end
+local origin = Camera.CFrame.Position
+local direction = targetPos - origin
+if direction.Magnitude <= 0.01 then return true end
+
+local params = RaycastParams.new()
+params.FilterType = Enum.RaycastFilterType.Exclude
+local ignoreList = { Camera }
+if LocalPlayer.Character then
+table.insert(ignoreList, LocalPlayer.Character)
+end
+local worldFolder = workspace:FindFirstChild("World")
+if worldFolder then
+local hlFolder = worldFolder:FindFirstChild("Highlight")
+if hlFolder then table.insert(ignoreList, hlFolder) end
+end
+local rootHighlight = workspace:FindFirstChild("Highlight")
+if rootHighlight then table.insert(ignoreList, rootHighlight) end
+params.FilterDescendantsInstances = ignoreList
+
+local result = workspace:Raycast(origin, direction, params)
+if not result then return true end
+if targetModel and result.Instance:IsDescendantOf(targetModel) then
+return true
+end
+return false
+end
+
 local function getNearestTarget()
 local char = LocalPlayer.Character
 local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -562,7 +657,7 @@ if model and model.Parent and not isOwnCharacter(model) and not isIgnoredContain
 local plr = getPlayerFromModel(model)
 if not isTeammate(plr, model) then
 local aimPart = getAimPartFromModel(model)
-if aimPart and isWithinFov(aimPart.Position) then
+if aimPart and isWithinFov(aimPart.Position) and isVisibleFromCamera(model, aimPart.Position) then
 local dist = (aimPart.Position - root.Position).Magnitude
 if dist < shortestDist then
 shortestDist = dist
@@ -606,7 +701,7 @@ local cur = Hub.CurrentTarget
 local targetModel = cur and cur.Parent
 local aimPart = getAimPartFromModel(targetModel)
 
-if not root or not targetModel or not aimPart or not isWithinFov(aimPart.Position) then
+if not root or not targetModel or not aimPart or not isWithinFov(aimPart.Position) or not isVisibleFromCamera(targetModel, aimPart.Position) then
 local nextTarget = getNearestTarget()
 if nextTarget then
 Hub.CurrentTarget = nextTarget
@@ -729,6 +824,10 @@ fovStroke.Color = Color3.fromRGB(255, 70, 90)
 fovStroke.Thickness = 1.6
 fovStroke.Transparency = 0.25
 
+local function updateFovRingSize()
+fovRing.Size = UDim2.new(0, Hub.FOVRadius * 2, 0, Hub.FOVRadius * 2)
+end
+
 local toggleUiBtn = Instance.new("TextButton")
 toggleUiBtn.Name = "ToggleMenuButton"
 toggleUiBtn.Size = UDim2.new(0, 110, 0, 36)
@@ -778,8 +877,8 @@ applySweepEffect(miniBtn)
 
 local shadowFrame = Instance.new("Frame")
 shadowFrame.Name = "MainShadow3D"
-shadowFrame.Size = UDim2.new(0, 360, 0, 560)
-shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -272)
+shadowFrame.Size = UDim2.new(0, 360, 0, 620)
+shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -302)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
 shadowFrame.Active = false
@@ -789,8 +888,8 @@ Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainPanel3D"
-mainFrame.Size = UDim2.new(0, 360, 0, 560)
-mainFrame.Position = UDim2.new(0.5, -180, 0.5, -280)
+mainFrame.Size = UDim2.new(0, 360, 0, 620)
+mainFrame.Position = UDim2.new(0.5, -180, 0.5, -310)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = false
@@ -916,6 +1015,21 @@ UserInputService.MouseIconEnabled = true
 end
 end
 
+local function unloadHub()
+stopLockLoop()
+clearAllEsp()
+for _, conn in ipairs(activeConnections) do
+pcall(function() conn:Disconnect() end)
+end
+table.clear(activeConnections)
+if getgenv then
+getgenv().TerUniversalHubConnections = nil
+end
+if screenGui and screenGui.Parent then
+screenGui:Destroy()
+end
+end
+
 trackConn(hideBtn.MouseButton1Click:Connect(function()
 setPanelVisible(false)
 end))
@@ -933,13 +1047,13 @@ if input.KeyCode == Enum.KeyCode.Insert or input.KeyCode == Enum.KeyCode.RightSh
 setPanelVisible(not mainFrame.Visible)
 return
 end
-if not gameProcessed and matchesLockBind(input) then
+if not gameProcessed and isBindCurrentlyHeld() then
 startLockHold()
 end
 end))
 
 trackConn(UserInputService.InputEnded:Connect(function(input)
-if matchesLockBind(input) or not isBindCurrentlyHeld() then
+if not isBindCurrentlyHeld() then
 stopLockLoop()
 end
 end))
@@ -1019,6 +1133,109 @@ refreshVisual(false)
 if state and callback then
 task.spawn(callback, true)
 end
+end
+
+local function addFovSlider(minVal, maxVal, currentVal, onChanged)
+local val = math.clamp(currentVal, minVal, maxVal)
+
+local row = Instance.new("Frame")
+row.Name = "FovSliderRow"
+row.Size = UDim2.new(1, 0, 0, 52)
+row.BackgroundColor3 = Color3.fromRGB(38, 12, 18)
+row.BorderSizePixel = 0
+row.Active = false
+row.ZIndex = 9
+row.Parent = listHolder
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
+local rowStroke = Instance.new("UIStroke", row)
+rowStroke.Color = Color3.fromRGB(120, 22, 32)
+rowStroke.Thickness = 1.4
+
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(0.65, -14, 0, 22)
+label.Position = UDim2.new(0, 14, 0, 4)
+label.BackgroundTransparency = 1
+label.Active = false
+label.Text = "ขนาดวงเล็ง FOV"
+label.TextColor3 = Color3.fromRGB(245, 235, 235)
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Font = Enum.Font.GothamBold
+label.TextSize = 13
+label.ZIndex = 10
+label.Parent = row
+
+local valLabel = Instance.new("TextLabel")
+valLabel.Size = UDim2.new(0.35, -14, 0, 22)
+valLabel.Position = UDim2.new(0.65, 0, 0, 4)
+valLabel.BackgroundTransparency = 1
+valLabel.Active = false
+valLabel.Text = tostring(math.floor(val)) .. " px"
+valLabel.TextColor3 = Color3.fromRGB(255, 120, 120)
+valLabel.TextXAlignment = Enum.TextXAlignment.Right
+valLabel.Font = Enum.Font.GothamBlack
+valLabel.TextSize = 12
+valLabel.ZIndex = 10
+valLabel.Parent = row
+
+local track = Instance.new("TextButton")
+track.Size = UDim2.new(1, -28, 0, 14)
+track.Position = UDim2.new(0, 14, 0, 30)
+track.BackgroundColor3 = Color3.fromRGB(22, 7, 10)
+track.Text = ""
+track.Active = true
+track.Modal = true
+track.AutoButtonColor = false
+track.ZIndex = 15
+track.Parent = row
+Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+
+table.insert(modalButtons, track)
+
+local fill = Instance.new("Frame")
+fill.Size = UDim2.new((val - minVal) / (maxVal - minVal), 0, 1, 0)
+fill.BackgroundColor3 = Color3.fromRGB(210, 28, 42)
+fill.BorderSizePixel = 0
+fill.Active = false
+fill.ZIndex = 16
+fill.Parent = track
+Instance.new("UICorner", fill).CornerRadius = UDim.new(1, 0)
+
+local sliding = false
+
+local function applyRatio(ratio)
+local clamped = math.clamp(ratio, 0, 1)
+local newVal = math.floor(minVal + (maxVal - minVal) * clamped)
+val = newVal
+fill.Size = UDim2.new((val - minVal) / (maxVal - minVal), 0, 1, 0)
+valLabel.Text = tostring(val) .. " px"
+if onChanged then onChanged(val) end
+end
+
+trackConn(track.InputBegan:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+sliding = true
+local ratio = (input.Position.X - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1)
+applyRatio(ratio)
+end
+end))
+
+trackConn(UserInputService.InputEnded:Connect(function(input)
+if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+if sliding then
+sliding = false
+saveConfig()
+end
+end
+end))
+
+trackConn(UserInputService.InputChanged:Connect(function(input)
+if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+local ratio = (input.Position.X - track.AbsolutePosition.X) / math.max(track.AbsoluteSize.X, 1)
+applyRatio(ratio)
+end
+end))
+
+if onChanged then onChanged(val) end
 end
 
 local function addDropdownRow(rowName, labelText, options, defaultText, zBase, onSelect)
@@ -1137,6 +1354,7 @@ trackConn(optBtn.MouseButton1Click:Connect(function()
 dropdownBtn.Text = opt.label .. " ▾"
 menuFrame.Visible = false
 if onSelect then onSelect(opt.value) end
+saveConfig()
 end))
 end
 
@@ -1147,7 +1365,7 @@ menuFrame.Visible = nextState
 end))
 end
 
-local function addActionButton(labelText, btnText, callback)
+local function addActionButton(labelText, btnText, bgColor, callback)
 local row = Instance.new("Frame")
 row.Size = UDim2.new(1, 0, 0, 44)
 row.BackgroundColor3 = Color3.fromRGB(38, 12, 18)
@@ -1176,7 +1394,7 @@ label.Parent = row
 local actBtn = Instance.new("TextButton")
 actBtn.Size = UDim2.new(0, 86, 0, 28)
 actBtn.Position = UDim2.new(1, -98, 0.5, -14)
-actBtn.BackgroundColor3 = Color3.fromRGB(130, 18, 28)
+actBtn.BackgroundColor3 = bgColor or Color3.fromRGB(130, 18, 28)
 actBtn.Text = btnText
 actBtn.TextColor3 = Color3.fromRGB(255, 240, 240)
 actBtn.Font = Enum.Font.GothamBlack
@@ -1199,36 +1417,47 @@ if callback then callback() end
 end))
 end
 
-addToggle("โครงศัตรูสีแดง (Red Outline)", true, function(enabled)
+addToggle("โครงศัตรูสีแดง (Red Outline)", Hub.RedOutlineEnabled, function(enabled)
 Hub.SetRedOutline(enabled)
 end)
 
-addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศัตรูแดง)", true, function(enabled)
+addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศัตรูแดง)", Hub.NametagsEnabled, function(enabled)
 Hub.SetNametags(enabled)
 end)
 
-addToggle("แสดงชื่อไอเทมตามแมพ", false, function(enabled)
+addToggle("แสดงชื่อไอเทมตามแมพ", Hub.ItemEspEnabled, function(enabled)
 Hub.SetItemEsp(enabled)
 end)
 
-addToggle("ล็อกเฉพาะในวงเล็ง FOV", false, function(enabled)
-Hub.FovOnlyLock = enabled
+addToggle("เช็กกำแพงก่อนล็อก (Wall Check)", Hub.WallCheckEnabled, function(enabled)
+Hub.WallCheckEnabled = enabled
+saveConfig()
 end)
 
-addDropdownRow("LockBindRow", "ปุ่มกดค้างล็อกเป้า", LockKeyOptions, "ปุ่ม F", 18, function(val)
+addToggle("ล็อกเฉพาะในวงเล็ง FOV", Hub.FovOnlyLock, function(enabled)
+Hub.FovOnlyLock = enabled
+saveConfig()
+end)
+
+addFovSlider(50, 400, Hub.FOVRadius, function(newRadius)
+Hub.FOVRadius = newRadius
+updateFovRingSize()
+end)
+
+addDropdownRow("LockBindRow", "ปุ่มกดค้างล็อกเป้า", LockKeyOptions, findOptionLabel(LockKeyOptions, Hub.LockBind, "ปุ่ม F"), 18, function(val)
 stopLockLoop()
 Hub.LockBind = val
 end)
 
-addDropdownRow("AimPartRow", "จุดเล็งเป้าหมาย", AimPartOptions, "หัว (Head)", 16, function(val)
+addDropdownRow("AimPartRow", "จุดเล็งเป้าหมาย", AimPartOptions, findOptionLabel(AimPartOptions, Hub.AimPartMode, "หัว (Head)"), 16, function(val)
 Hub.AimPartMode = val
 end)
 
-addDropdownRow("SmoothRow", "ความนุ่มของกล้อง", SmoothnessOptions, "กลาง (0.24)", 14, function(val)
+addDropdownRow("SmoothRow", "ความนุ่มของกล้อง", SmoothnessOptions, findOptionLabel(SmoothnessOptions, Hub.LockSmoothness, "กลาง (0.24)"), 14, function(val)
 Hub.LockSmoothness = tonumber(val) or 0.24
 end)
 
-addDropdownRow("DistRow", "ระยะล็อกสูงสุด", DistanceOptions, "160 Studs", 12, function(val)
+addDropdownRow("DistRow", "ระยะล็อกสูงสุด", DistanceOptions, findOptionLabel(DistanceOptions, Hub.MaxLockDistance, "160 Studs"), 12, function(val)
 Hub.MaxLockDistance = tonumber(val) or 160
 end)
 
@@ -1236,6 +1465,10 @@ addToggle("แสดงวงเล็ง FOV Ring", false, function(enabled)
 fovRing.Visible = enabled
 end)
 
-addActionButton("รีเซ็ตป้ายชื่อและโครง ESP", "ล้าง ESP", function()
+addActionButton("รีเซ็ตป้ายชื่อและโครง ESP", "ล้าง ESP", Color3.fromRGB(130, 18, 28), function()
 Hub.ResetEsp()
+end)
+
+addActionButton("ปิดสคริปต์และลบ UI ออกจากเกม", "Unload", Color3.fromRGB(75, 10, 15), function()
+unloadHub()
 end)
