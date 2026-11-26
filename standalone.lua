@@ -7,7 +7,6 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
--- ล้าง Connection เก่าหากมีการรันซ้ำในรอบเดียว
 if getgenv and getgenv().TerUniversalHubConnections then
 for _, conn in ipairs(getgenv().TerUniversalHubConnections) do
 pcall(function() conn:Disconnect() end)
@@ -27,7 +26,7 @@ local Hub = {}
 Hub.NametagsEnabled = true
 Hub.RedOutlineEnabled = true
 Hub.LockHolding = false
-Hub.LockBind = "RMB" -- ตัวเลือก: "RMB", "E", "Q", "F"
+Hub.LockBind = "F" -- ตัวเลือก: "RMB", "E", "Q", "F"
 Hub.CurrentTarget = nil
 Hub.TrackedModels = {}
 Hub.ActiveGuis = {}
@@ -37,10 +36,10 @@ Hub.LockSmoothness = 0.24
 Hub.FOVRadius = 120
 
 local LockKeyOptions = {
+{ label = "ปุ่ม F", value = "F", keyCode = Enum.KeyCode.F, userInputType = Enum.UserInputType.Keyboard },
 { label = "คลิกขวา (RMB)", value = "RMB", keyCode = nil, userInputType = Enum.UserInputType.MouseButton2 },
 { label = "ปุ่ม E", value = "E", keyCode = Enum.KeyCode.E, userInputType = Enum.UserInputType.Keyboard },
 { label = "ปุ่ม Q", value = "Q", keyCode = Enum.KeyCode.Q, userInputType = Enum.UserInputType.Keyboard },
-{ label = "ปุ่ม F", value = "F", keyCode = Enum.KeyCode.F, userInputType = Enum.UserInputType.Keyboard },
 }
 
 local function getActiveBindConfig()
@@ -50,6 +49,26 @@ return opt
 end
 end
 return LockKeyOptions[1]
+end
+
+local function isBindCurrentlyHeld()
+local cfg = getActiveBindConfig()
+if cfg.value == "RMB" then
+return UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+elseif cfg.keyCode then
+return UserInputService:IsKeyDown(cfg.keyCode)
+end
+return false
+end
+
+local function matchesLockBind(input)
+local cfg = getActiveBindConfig()
+if cfg.value == "RMB" then
+return input.UserInputType == Enum.UserInputType.MouseButton2
+elseif cfg.keyCode then
+return input.KeyCode == cfg.keyCode
+end
+return false
 end
 
 local function isOwnCharacter(model)
@@ -334,7 +353,7 @@ end
 end
 
 local function startLockHold()
-if Hub.LockHolding then return end
+if not isBindCurrentlyHeld() then return end
 local target = getNearestTarget()
 if not target then
 stopLockLoop()
@@ -353,7 +372,7 @@ lockConn = nil
 end
 
 lockConn = trackConn(RunService.RenderStepped:Connect(function()
-if not Hub.LockHolding then
+if not isBindCurrentlyHeld() then
 stopLockLoop()
 return
 end
@@ -373,16 +392,6 @@ local camPos = Camera.CFrame.Position
 local lookCFrame = CFrame.lookAt(camPos, cur.Position)
 Camera.CFrame = Camera.CFrame:Lerp(lookCFrame, Hub.LockSmoothness)
 end))
-end
-
-local function matchesLockBind(input)
-local cfg = getActiveBindConfig()
-if cfg.value == "RMB" then
-return input.UserInputType == Enum.UserInputType.MouseButton2
-elseif cfg.keyCode then
-return input.KeyCode == cfg.keyCode
-end
-return false
 end
 
 local function makeDraggable(dragHandle, targetFrame)
@@ -683,7 +692,7 @@ end
 end))
 
 trackConn(UserInputService.InputEnded:Connect(function(input)
-if matchesLockBind(input) then
+if matchesLockBind(input) or not isBindCurrentlyHeld() then
 stopLockLoop()
 end
 end))
@@ -814,7 +823,7 @@ local dropdownBtn = Instance.new("TextButton")
 dropdownBtn.Size = UDim2.new(0, 112, 0, 30)
 dropdownBtn.Position = UDim2.new(1, -122, 0.5, -15)
 dropdownBtn.BackgroundColor3 = Color3.fromRGB(85, 14, 22)
-dropdownBtn.Text = "คลิกขวา (RMB) ▾"
+dropdownBtn.Text = "ปุ่ม F ▾"
 dropdownBtn.TextColor3 = Color3.fromRGB(255, 240, 240)
 dropdownBtn.Font = Enum.Font.GothamBold
 dropdownBtn.TextSize = 11
@@ -877,7 +886,6 @@ stopLockLoop()
 Hub.LockBind = opt.value
 dropdownBtn.Text = opt.label .. " ▾"
 menuFrame.Visible = false
-print("[Universal 3D Hub] Lock bind changed to:", opt.value)
 end))
 end
 
