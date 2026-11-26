@@ -26,7 +26,8 @@ local Hub = {}
 Hub.NametagsEnabled = true
 Hub.RedOutlineEnabled = true
 Hub.LockHolding = false
-Hub.LockBind = "F" -- ตัวเลือก: "RMB", "E", "Q", "F"
+Hub.LockBind = "F"
+Hub.AimPartMode = "Head" -- "Head" หรือ "HumanoidRootPart"
 Hub.CurrentTarget = nil
 Hub.TrackedModels = {}
 Hub.ActiveGuis = {}
@@ -40,6 +41,13 @@ local LockKeyOptions = {
 { label = "คลิกขวา (RMB)", value = "RMB", keyCode = nil, userInputType = Enum.UserInputType.MouseButton2 },
 { label = "ปุ่ม E", value = "E", keyCode = Enum.KeyCode.E, userInputType = Enum.UserInputType.Keyboard },
 { label = "ปุ่ม Q", value = "Q", keyCode = Enum.KeyCode.Q, userInputType = Enum.UserInputType.Keyboard },
+{ label = "ปุ่ม X", value = "X", keyCode = Enum.KeyCode.X, userInputType = Enum.UserInputType.Keyboard },
+{ label = "ปุ่ม C", value = "C", keyCode = Enum.KeyCode.C, userInputType = Enum.UserInputType.Keyboard },
+}
+
+local AimPartOptions = {
+{ label = "หัว (Head)", value = "Head" },
+{ label = "ลำตัว (HRP)", value = "HumanoidRootPart" },
 }
 
 local function getActiveBindConfig()
@@ -152,6 +160,17 @@ if hl and hl.Parent then hl:Destroy() end
 Hub.ActiveHighlights[model] = nil
 
 Hub.TrackedModels[model] = nil
+end
+
+local function clearAllEsp()
+for model in pairs(Hub.TrackedModels) do
+cleanupModel(model)
+end
+for _, desc in ipairs(workspace:GetDescendants()) do
+if desc.Name == "EnemyRedOutline" or desc.Name == "MapNametag" then
+pcall(function() desc:Destroy() end)
+end
+end
 end
 
 local function attachVisualsToModel(model)
@@ -270,6 +289,11 @@ Hub.NametagsEnabled = state == true
 refreshAllTracked()
 end
 
+function Hub.ResetEsp()
+clearAllEsp()
+scanInitialModels()
+end
+
 trackConn(workspace.DescendantAdded:Connect(function(desc)
 if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
 task.defer(attachVisualsToModel, desc.Parent)
@@ -311,6 +335,19 @@ scanInitialModels()
 
 local lockConn = nil
 local lockStatusUpdater = nil
+local closeAllDropdowns = nil
+
+local function getAimPartFromModel(model)
+if not model or isOwnCharacter(model) or isIgnoredContainer(model) then return nil end
+local hum = model:FindFirstChildOfClass("Humanoid")
+if not hum or hum.Health <= 0 then return nil end
+
+if Hub.AimPartMode == "HumanoidRootPart" then
+return model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
+else
+return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+end
+end
 
 local function getNearestTarget()
 local char = LocalPlayer.Character
@@ -324,9 +361,8 @@ for model in pairs(Hub.TrackedModels) do
 if model and model.Parent and not isOwnCharacter(model) and not isIgnoredContainer(model) then
 local plr = getPlayerFromModel(model)
 if not isTeammate(plr, model) then
-local hum = model:FindFirstChildOfClass("Humanoid")
-local aimPart = model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
-if hum and hum.Health > 0 and aimPart then
+local aimPart = getAimPartFromModel(model)
+if aimPart then
 local dist = (aimPart.Position - root.Position).Magnitude
 if dist < shortestDist then
 shortestDist = dist
@@ -376,20 +412,31 @@ if not isBindCurrentlyHeld() then
 stopLockLoop()
 return
 end
+local char = LocalPlayer.Character
+local root = char and char:FindFirstChild("HumanoidRootPart")
 local cur = Hub.CurrentTarget
-local curHum = cur and cur.Parent and cur.Parent:FindFirstChildOfClass("Humanoid")
-if not cur or not cur.Parent or not curHum or curHum.Health <= 0 then
+local targetModel = cur and cur.Parent
+local aimPart = getAimPartFromModel(targetModel)
+
+if not root or not targetModel or not aimPart then
 local nextTarget = getNearestTarget()
 if nextTarget then
 Hub.CurrentTarget = nextTarget
-cur = nextTarget
+aimPart = nextTarget
 else
 stopLockLoop()
 return
 end
 end
+
+if (aimPart.Position - root.Position).Magnitude > Hub.MaxLockDistance then
+stopLockLoop()
+return
+end
+
+Hub.CurrentTarget = aimPart
 local camPos = Camera.CFrame.Position
-local lookCFrame = CFrame.lookAt(camPos, cur.Position)
+local lookCFrame = CFrame.lookAt(camPos, aimPart.Position)
 Camera.CFrame = Camera.CFrame:Lerp(lookCFrame, Hub.LockSmoothness)
 end))
 end
@@ -543,8 +590,8 @@ applySweepEffect(miniBtn)
 
 local shadowFrame = Instance.new("Frame")
 shadowFrame.Name = "MainShadow3D"
-shadowFrame.Size = UDim2.new(0, 350, 0, 385)
-shadowFrame.Position = UDim2.new(0.5, -169, 0.5, -185)
+shadowFrame.Size = UDim2.new(0, 360, 0, 445)
+shadowFrame.Position = UDim2.new(0.5, -174, 0.5, -215)
 shadowFrame.BackgroundColor3 = Color3.fromRGB(22, 3, 6)
 shadowFrame.BorderSizePixel = 0
 shadowFrame.Active = false
@@ -554,8 +601,8 @@ Instance.new("UICorner", shadowFrame).CornerRadius = UDim.new(0, 16)
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainPanel3D"
-mainFrame.Size = UDim2.new(0, 350, 0, 385)
-mainFrame.Position = UDim2.new(0.5, -175, 0.5, -192)
+mainFrame.Size = UDim2.new(0, 360, 0, 445)
+mainFrame.Position = UDim2.new(0.5, -180, 0.5, -222)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 10, 14)
 mainFrame.BorderSizePixel = 0
 mainFrame.ClipsDescendants = false
@@ -654,11 +701,23 @@ mainFrame.Position.Y.Offset + 8
 end)
 
 local modalButtons = { toggleUiBtn, miniBtn, hideBtn }
+local dropdownMenus = {}
+
+closeAllDropdowns = function()
+for _, menu in ipairs(dropdownMenus) do
+if menu and menu.Parent then
+menu.Visible = false
+end
+end
+end
 
 local function setPanelVisible(visible)
 mainFrame.Visible = visible
 shadowFrame.Visible = visible
 toggleUiBtn.Text = visible and "ซ่อน UI" or "เปิด UI"
+if not visible and closeAllDropdowns then
+closeAllDropdowns()
+end
 for _, btn in ipairs(modalButtons) do
 if btn and btn.Parent then
 btn.Modal = visible
@@ -774,14 +833,14 @@ task.spawn(callback, true)
 end
 end
 
-local function addLockBindDropdown()
+local function addDropdownRow(rowName, labelText, options, defaultText, zBase, onSelect)
 local row = Instance.new("Frame")
-row.Name = "LockBindRow"
+row.Name = rowName
 row.Size = UDim2.new(1, 0, 0, 48)
 row.BackgroundColor3 = Color3.fromRGB(38, 12, 18)
 row.BorderSizePixel = 0
 row.Active = false
-row.ZIndex = 12
+row.ZIndex = zBase
 row.Parent = listHolder
 Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
 local rowStroke = Instance.new("UIStroke", row)
@@ -793,15 +852,17 @@ label.Size = UDim2.new(1, -138, 1, 0)
 label.Position = UDim2.new(0, 14, 0, 0)
 label.BackgroundTransparency = 1
 label.Active = false
-label.Text = "ปุ่มกดค้างล็อกเป้า"
+label.Text = labelText
 label.TextColor3 = Color3.fromRGB(245, 235, 235)
 label.TextXAlignment = Enum.TextXAlignment.Left
 label.Font = Enum.Font.GothamBold
 label.TextSize = 13
-label.ZIndex = 13
+label.ZIndex = zBase + 1
 label.Parent = row
 
-local statusBadge = Instance.new("TextLabel")
+local statusBadge = nil
+if rowName == "LockBindRow" then
+statusBadge = Instance.new("TextLabel")
 statusBadge.Size = UDim2.new(0, 56, 0, 24)
 statusBadge.Position = UDim2.new(1, -184, 0.5, -12)
 statusBadge.BackgroundColor3 = Color3.fromRGB(55, 22, 28)
@@ -809,7 +870,7 @@ statusBadge.Text = "ปล่อย"
 statusBadge.TextColor3 = Color3.fromRGB(220, 190, 190)
 statusBadge.Font = Enum.Font.GothamBlack
 statusBadge.TextSize = 11
-statusBadge.ZIndex = 14
+statusBadge.ZIndex = zBase + 2
 statusBadge.Parent = row
 Instance.new("UICorner", statusBadge).CornerRadius = UDim.new(0, 6)
 
@@ -818,19 +879,20 @@ statusBadge.Text = isLocked and "ล็อกอยู่" or "ปล่อย"
 statusBadge.BackgroundColor3 = isLocked and Color3.fromRGB(210, 28, 42) or Color3.fromRGB(55, 22, 28)
 statusBadge.TextColor3 = isLocked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(220, 190, 190)
 end
+end
 
 local dropdownBtn = Instance.new("TextButton")
-dropdownBtn.Size = UDim2.new(0, 112, 0, 30)
-dropdownBtn.Position = UDim2.new(1, -122, 0.5, -15)
+dropdownBtn.Size = UDim2.new(0, 114, 0, 30)
+dropdownBtn.Position = UDim2.new(1, -124, 0.5, -15)
 dropdownBtn.BackgroundColor3 = Color3.fromRGB(85, 14, 22)
-dropdownBtn.Text = "ปุ่ม F ▾"
+dropdownBtn.Text = defaultText .. " ▾"
 dropdownBtn.TextColor3 = Color3.fromRGB(255, 240, 240)
 dropdownBtn.Font = Enum.Font.GothamBold
 dropdownBtn.TextSize = 11
 dropdownBtn.Active = true
 dropdownBtn.Modal = true
 dropdownBtn.AutoButtonColor = false
-dropdownBtn.ZIndex = 25
+dropdownBtn.ZIndex = zBase + 5
 dropdownBtn.Parent = row
 Instance.new("UICorner", dropdownBtn).CornerRadius = UDim.new(0, 8)
 local ddStroke = Instance.new("UIStroke", dropdownBtn)
@@ -840,19 +902,21 @@ ddStroke.Thickness = 1.4
 table.insert(modalButtons, dropdownBtn)
 
 local menuFrame = Instance.new("Frame")
-menuFrame.Name = "LockKeyDropdownList"
-menuFrame.Size = UDim2.new(0, 112, 0, #LockKeyOptions * 28 + 6)
-menuFrame.Position = UDim2.new(1, -122, 1, 4)
+menuFrame.Name = rowName .. "Menu"
+menuFrame.Size = UDim2.new(0, 114, 0, #options * 28 + 6)
+menuFrame.Position = UDim2.new(1, -124, 1, 4)
 menuFrame.BackgroundColor3 = Color3.fromRGB(30, 9, 14)
 menuFrame.BorderSizePixel = 0
 menuFrame.Visible = false
 menuFrame.Active = true
-menuFrame.ZIndex = 60
+menuFrame.ZIndex = zBase + 40
 menuFrame.Parent = row
 Instance.new("UICorner", menuFrame).CornerRadius = UDim.new(0, 8)
 local menuStroke = Instance.new("UIStroke", menuFrame)
 menuStroke.Color = Color3.fromRGB(220, 60, 75)
 menuStroke.Thickness = 1.5
+
+table.insert(dropdownMenus, menuFrame)
 
 local menuLayout = Instance.new("UIListLayout", menuFrame)
 menuLayout.Padding = UDim.new(0, 2)
@@ -864,7 +928,7 @@ menuPad.PaddingBottom = UDim.new(0, 3)
 menuPad.PaddingLeft = UDim.new(0, 3)
 menuPad.PaddingRight = UDim.new(0, 3)
 
-for _, opt in ipairs(LockKeyOptions) do
+for _, opt in ipairs(options) do
 local optBtn = Instance.new("TextButton")
 optBtn.Size = UDim2.new(1, 0, 0, 26)
 optBtn.BackgroundColor3 = Color3.fromRGB(52, 14, 20)
@@ -875,22 +939,75 @@ optBtn.TextSize = 11
 optBtn.Active = true
 optBtn.Modal = true
 optBtn.AutoButtonColor = false
-optBtn.ZIndex = 65
+optBtn.ZIndex = zBase + 45
 optBtn.Parent = menuFrame
 Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 6)
 
 table.insert(modalButtons, optBtn)
 
 trackConn(optBtn.MouseButton1Click:Connect(function()
-stopLockLoop()
-Hub.LockBind = opt.value
 dropdownBtn.Text = opt.label .. " ▾"
 menuFrame.Visible = false
+if onSelect then onSelect(opt.value) end
 end))
 end
 
 trackConn(dropdownBtn.MouseButton1Click:Connect(function()
-menuFrame.Visible = not menuFrame.Visible
+local nextState = not menuFrame.Visible
+closeAllDropdowns()
+menuFrame.Visible = nextState
+end))
+end
+
+local function addActionButton(labelText, btnText, callback)
+local row = Instance.new("Frame")
+row.Size = UDim2.new(1, 0, 0, 44)
+row.BackgroundColor3 = Color3.fromRGB(38, 12, 18)
+row.BorderSizePixel = 0
+row.Active = false
+row.ZIndex = 9
+row.Parent = listHolder
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 12)
+local rowStroke = Instance.new("UIStroke", row)
+rowStroke.Color = Color3.fromRGB(120, 22, 32)
+rowStroke.Thickness = 1.4
+
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(1, -110, 1, 0)
+label.Position = UDim2.new(0, 14, 0, 0)
+label.BackgroundTransparency = 1
+label.Active = false
+label.Text = labelText
+label.TextColor3 = Color3.fromRGB(245, 235, 235)
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.Font = Enum.Font.GothamBold
+label.TextSize = 13
+label.ZIndex = 10
+label.Parent = row
+
+local actBtn = Instance.new("TextButton")
+actBtn.Size = UDim2.new(0, 86, 0, 28)
+actBtn.Position = UDim2.new(1, -98, 0.5, -14)
+actBtn.BackgroundColor3 = Color3.fromRGB(130, 18, 28)
+actBtn.Text = btnText
+actBtn.TextColor3 = Color3.fromRGB(255, 240, 240)
+actBtn.Font = Enum.Font.GothamBlack
+actBtn.TextSize = 11
+actBtn.Active = true
+actBtn.Modal = true
+actBtn.AutoButtonColor = false
+actBtn.ZIndex = 20
+actBtn.Parent = row
+Instance.new("UICorner", actBtn).CornerRadius = UDim.new(0, 8)
+local actStroke = Instance.new("UIStroke", actBtn)
+actStroke.Color = Color3.fromRGB(230, 65, 80)
+actStroke.Thickness = 1.3
+
+table.insert(modalButtons, actBtn)
+
+trackConn(actBtn.MouseButton1Click:Connect(function()
+closeAllDropdowns()
+if callback then callback() end
 end))
 end
 
@@ -902,8 +1019,19 @@ addToggle("ชื่อทั้งแมพ (ทีมเขียว / ศั�
 Hub.SetNametags(enabled)
 end)
 
-addLockBindDropdown()
+addDropdownRow("LockBindRow", "ปุ่มกดค้างล็อกเป้า", LockKeyOptions, "ปุ่ม F", 16, function(val)
+stopLockLoop()
+Hub.LockBind = val
+end)
+
+addDropdownRow("AimPartRow", "จุดเล็งเป้าหมาย", AimPartOptions, "หัว (Head)", 14, function(val)
+Hub.AimPartMode = val
+end)
 
 addToggle("แสดงวงเล็ง FOV Ring", false, function(enabled)
 fovRing.Visible = enabled
+end)
+
+addActionButton("รีเซ็ตป้ายชื่อและโครง ESP", "ล้าง ESP", function()
+Hub.ResetEsp()
 end)
