@@ -7,6 +7,22 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
+-- ล้าง Connection เก่าหากมีการรันซ้ำในรอบเดียว
+if getgenv and getgenv().TerUniversalHubConnections then
+for _, conn in ipairs(getgenv().TerUniversalHubConnections) do
+pcall(function() conn:Disconnect() end)
+end
+end
+local activeConnections = {}
+if getgenv then
+getgenv().TerUniversalHubConnections = activeConnections
+end
+
+local function trackConn(conn)
+table.insert(activeConnections, conn)
+return conn
+end
+
 local Hub = {}
 Hub.NametagsEnabled = true
 Hub.RedOutlineEnabled = true
@@ -21,11 +37,20 @@ Hub.LockSmoothness = 0.24
 Hub.FOVRadius = 120
 
 local LockKeyOptions = {
-{ label = "คลิกขวา (RMB)", value = "RMB" },
-{ label = "ปุ่ม E", value = "E" },
-{ label = "ปุ่ม Q", value = "Q" },
-{ label = "ปุ่ม F", value = "F" },
+{ label = "คลิกขวา (RMB)", value = "RMB", keyCode = nil, userInputType = Enum.UserInputType.MouseButton2 },
+{ label = "ปุ่ม E", value = "E", keyCode = Enum.KeyCode.E, userInputType = Enum.UserInputType.Keyboard },
+{ label = "ปุ่ม Q", value = "Q", keyCode = Enum.KeyCode.Q, userInputType = Enum.UserInputType.Keyboard },
+{ label = "ปุ่ม F", value = "F", keyCode = Enum.KeyCode.F, userInputType = Enum.UserInputType.Keyboard },
 }
+
+local function getActiveBindConfig()
+for _, opt in ipairs(LockKeyOptions) do
+if opt.value == Hub.LockBind then
+return opt
+end
+end
+return LockKeyOptions[1]
+end
 
 local function isOwnCharacter(model)
 if not model then return true end
@@ -226,46 +251,45 @@ Hub.NametagsEnabled = state == true
 refreshAllTracked()
 end
 
-workspace.DescendantAdded:Connect(function(desc)
+trackConn(workspace.DescendantAdded:Connect(function(desc)
 if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
 task.defer(attachVisualsToModel, desc.Parent)
 end
-end)
+end))
 
-workspace.DescendantRemoving:Connect(function(desc)
+trackConn(workspace.DescendantRemoving:Connect(function(desc)
 if desc:IsA("Model") and Hub.TrackedModels[desc] then
 cleanupModel(desc)
 elseif desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") and Hub.TrackedModels[desc.Parent] then
 cleanupModel(desc.Parent)
 end
-end)
+end))
 
 for _, plr in ipairs(Players:GetPlayers()) do
 if plr ~= LocalPlayer then
-plr.CharacterAdded:Connect(function(char)
+trackConn(plr.CharacterAdded:Connect(function(char)
 task.defer(attachVisualsToModel, char)
-end)
-plr:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked)
-plr:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked)
+end))
+trackConn(plr:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked))
+trackConn(plr:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked))
 end
 end
 
-Players.PlayerAdded:Connect(function(plr)
+trackConn(Players.PlayerAdded:Connect(function(plr)
 if plr ~= LocalPlayer then
-plr.CharacterAdded:Connect(function(char)
+trackConn(plr.CharacterAdded:Connect(function(char)
 task.defer(attachVisualsToModel, char)
-end)
-plr:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked)
-plr:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked)
+end))
+trackConn(plr:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked))
+trackConn(plr:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked))
 end
-end)
+end))
 
-LocalPlayer:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked)
-LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked)
+trackConn(LocalPlayer:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked))
+trackConn(LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked))
 
 scanInitialModels()
 
--- ระบบล็อกเป้าแบบกดค้าง (Hold-to-Lock) และปล่อยปุ่มเพื่อปลดล็อก
 local lockConn = nil
 local lockStatusUpdater = nil
 
@@ -328,7 +352,7 @@ lockConn:Disconnect()
 lockConn = nil
 end
 
-lockConn = RunService.RenderStepped:Connect(function()
+lockConn = trackConn(RunService.RenderStepped:Connect(function()
 if not Hub.LockHolding then
 stopLockLoop()
 return
@@ -348,18 +372,15 @@ end
 local camPos = Camera.CFrame.Position
 local lookCFrame = CFrame.lookAt(camPos, cur.Position)
 Camera.CFrame = Camera.CFrame:Lerp(lookCFrame, Hub.LockSmoothness)
-end)
+end))
 end
 
 local function matchesLockBind(input)
-if Hub.LockBind == "RMB" then
+local cfg = getActiveBindConfig()
+if cfg.value == "RMB" then
 return input.UserInputType == Enum.UserInputType.MouseButton2
-elseif Hub.LockBind == "E" then
-return input.KeyCode == Enum.KeyCode.E
-elseif Hub.LockBind == "Q" then
-return input.KeyCode == Enum.KeyCode.Q
-elseif Hub.LockBind == "F" then
-return input.KeyCode == Enum.KeyCode.F
+elseif cfg.keyCode then
+return input.KeyCode == cfg.keyCode
 end
 return false
 end
@@ -370,7 +391,7 @@ local dragInput = nil
 local dragStart = nil
 local startPos = nil
 
-dragHandle.InputBegan:Connect(function(input)
+trackConn(dragHandle.InputBegan:Connect(function(input)
 if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
 dragging = true
 dragStart = input.Position
@@ -381,15 +402,15 @@ dragging = false
 end
 end)
 end
-end)
+end))
 
-dragHandle.InputChanged:Connect(function(input)
+trackConn(dragHandle.InputChanged:Connect(function(input)
 if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
 dragInput = input
 end
-end)
+end))
 
-UserInputService.InputChanged:Connect(function(input)
+trackConn(UserInputService.InputChanged:Connect(function(input)
 if input == dragInput and dragging then
 local delta = input.Position - dragStart
 targetFrame.Position = UDim2.new(
@@ -399,7 +420,7 @@ startPos.Y.Scale,
 startPos.Y.Offset + delta.Y
 )
 end
-end)
+end))
 end
 
 local function applySweepEffect(parentFrame)
@@ -639,19 +660,19 @@ UserInputService.MouseIconEnabled = true
 end
 end
 
-hideBtn.MouseButton1Click:Connect(function()
+trackConn(hideBtn.MouseButton1Click:Connect(function()
 setPanelVisible(false)
-end)
+end))
 
-toggleUiBtn.MouseButton1Click:Connect(function()
+trackConn(toggleUiBtn.MouseButton1Click:Connect(function()
 setPanelVisible(not mainFrame.Visible)
-end)
+end))
 
-miniBtn.MouseButton1Click:Connect(function()
+trackConn(miniBtn.MouseButton1Click:Connect(function()
 setPanelVisible(not mainFrame.Visible)
-end)
+end))
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+trackConn(UserInputService.InputBegan:Connect(function(input, gameProcessed)
 if input.KeyCode == Enum.KeyCode.Insert or input.KeyCode == Enum.KeyCode.RightShift then
 setPanelVisible(not mainFrame.Visible)
 return
@@ -659,13 +680,13 @@ end
 if not gameProcessed and matchesLockBind(input) then
 startLockHold()
 end
-end)
+end))
 
-UserInputService.InputEnded:Connect(function(input)
+trackConn(UserInputService.InputEnded:Connect(function(input)
 if matchesLockBind(input) then
 stopLockLoop()
 end
-end)
+end))
 
 makeDraggable(header, mainFrame)
 makeDraggable(miniBtn, miniBtn)
@@ -732,11 +753,11 @@ switchStroke.Color = targetBorder
 end
 end
 
-switchBtn.MouseButton1Click:Connect(function()
+trackConn(switchBtn.MouseButton1Click:Connect(function()
 state = not state
 refreshVisual(true)
 if callback then callback(state) end
-end)
+end))
 
 refreshVisual(false)
 if state and callback then
@@ -744,7 +765,6 @@ task.spawn(callback, true)
 end
 end
 
--- Dropdown เลือกปุ่มกดค้างเพื่อล็อกเป้า (ปล่อยปุ่ม = ปลดล็อก)
 local function addLockBindDropdown()
 local row = Instance.new("Frame")
 row.Name = "LockBindRow"
@@ -852,17 +872,18 @@ Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 6)
 
 table.insert(modalButtons, optBtn)
 
-optBtn.MouseButton1Click:Connect(function()
+trackConn(optBtn.MouseButton1Click:Connect(function()
 stopLockLoop()
 Hub.LockBind = opt.value
 dropdownBtn.Text = opt.label .. " ▾"
 menuFrame.Visible = false
-end)
+print("[Universal 3D Hub] Lock bind changed to:", opt.value)
+end))
 end
 
-dropdownBtn.MouseButton1Click:Connect(function()
+trackConn(dropdownBtn.MouseButton1Click:Connect(function()
 menuFrame.Visible = not menuFrame.Visible
-end)
+end))
 end
 
 addToggle("โครงศัตรูสีแดง (Red Outline)", true, function(enabled)
