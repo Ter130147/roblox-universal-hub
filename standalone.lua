@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+local Teams = game:GetService("Teams")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -27,7 +28,7 @@ Hub.NametagsEnabled = true
 Hub.RedOutlineEnabled = true
 Hub.LockHolding = false
 Hub.LockBind = "F"
-Hub.AimPartMode = "Head" -- "Head" หรือ "HumanoidRootPart"
+Hub.AimPartMode = "Head"
 Hub.CurrentTarget = nil
 Hub.TrackedModels = {}
 Hub.ActiveGuis = {}
@@ -69,16 +70,6 @@ end
 return false
 end
 
-local function matchesLockBind(input)
-local cfg = getActiveBindConfig()
-if cfg.value == "RMB" then
-return input.UserInputType == Enum.UserInputType.MouseButton2
-elseif cfg.keyCode then
-return input.KeyCode == cfg.keyCode
-end
-return false
-end
-
 local function isOwnCharacter(model)
 if not model then return true end
 if LocalPlayer.Character and (model == LocalPlayer.Character or model:IsDescendantOf(LocalPlayer.Character)) then
@@ -112,7 +103,7 @@ end
 
 local function getCustomTeamTag(instance)
 if not instance then return nil end
-local attrTeam = instance:GetAttribute("Team") or instance:GetAttribute("TeamName")
+local attrTeam = instance:GetAttribute("Team") or instance:GetAttribute("TeamName") or instance:GetAttribute("Faction")
 if attrTeam ~= nil then return tostring(attrTeam) end
 local parent = instance.Parent
 while parent and parent ~= workspace do
@@ -125,28 +116,37 @@ end
 return nil
 end
 
+-- คืนค่า: true = ทีมเดียวกัน, false = ฝ่ายศัตรู / โหมดมีแต่ศัตรู (FFA)
 local function isTeammate(player, model)
 if not player or player == LocalPlayer then return false end
+
+-- กรณีแมพใช้ระบบ Teams มาตรฐานของ Roblox
+if #Teams:GetTeams() > 0 then
 if LocalPlayer.Team ~= nil and player.Team ~= nil then
 return player.Team == LocalPlayer.Team
 end
 if not LocalPlayer.Neutral and not player.Neutral then
 return player.TeamColor == LocalPlayer.TeamColor
 end
-local myChar = LocalPlayer.Character
-local myTag = getCustomTeamTag(myChar) or getCustomTeamTag(LocalPlayer)
+return false
+end
+
+-- กรณีแมพกำหนดทีมผ่าน Attribute หรือ Folder
+local myTag = getCustomTeamTag(LocalPlayer.Character) or getCustomTeamTag(LocalPlayer)
 local theirTag = getCustomTeamTag(model) or getCustomTeamTag(player)
 if myTag and theirTag then
 return myTag == theirTag
 end
+
+-- กรณีไม่มีทีม / โหมดมีแต่ศัตรู (FFA) ให้ถือว่าเป็นฝ่ายตรงข้ามทั้งหมด
 return false
 end
 
 local function getTagColor(player, model)
 if isTeammate(player, model) then
-return Color3.fromRGB(60, 255, 110)
+return Color3.fromRGB(60, 255, 110) -- ทีมเดียวกัน = สีเขียว
 else
-return Color3.fromRGB(255, 65, 65)
+return Color3.fromRGB(255, 65, 65)  -- ศัตรู / โหมดมีแต่ศัตรู = สีแดง
 end
 end
 
@@ -184,6 +184,7 @@ if not hum or not head then return end
 local plr = getPlayerFromModel(model)
 local friendly = isTeammate(plr, model)
 
+-- โครงสีแดงแสดงเฉพาะฝั่งศัตรู (และทุกคนในโหมดที่มีแต่ศัตรู)
 local existingHl = Hub.ActiveHighlights[model]
 if friendly then
 if existingHl and existingHl.Parent then existingHl:Destroy() end
@@ -211,6 +212,7 @@ end
 existingHl.Enabled = Hub.RedOutlineEnabled
 end
 
+-- ป้ายชื่อเหนือหัวแยกสี: ทีมเดียวกันสีเขียว / ศัตรูสีแดง
 local existingGui = Hub.ActiveGuis[model]
 if not existingGui or not existingGui.Parent then
 local oldTag = head:FindFirstChild("MapNametag")
@@ -315,6 +317,7 @@ task.defer(attachVisualsToModel, char)
 end))
 trackConn(plr:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked))
 trackConn(plr:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked))
+trackConn(plr.AttributeChanged:Connect(refreshAllTracked))
 end
 end
 
@@ -325,11 +328,13 @@ task.defer(attachVisualsToModel, char)
 end))
 trackConn(plr:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked))
 trackConn(plr:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked))
+trackConn(plr.AttributeChanged:Connect(refreshAllTracked))
 end
 end))
 
 trackConn(LocalPlayer:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked))
 trackConn(LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked))
+trackConn(LocalPlayer.AttributeChanged:Connect(refreshAllTracked))
 
 scanInitialModels()
 
