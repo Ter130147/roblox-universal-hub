@@ -4,11 +4,224 @@ local Teams = game:GetService("Teams")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
+local KEY_API_URL = "https://ter-key-api.copter2700.workers.dev"
+local KEY_CACHE_FILE = "TerUniversalHub_Key.json"
+
+local function canUseFileIo()
+return typeof(writefile) == "function" and typeof(readfile) == "function"
+end
+
+local function loadSavedKey()
+if not canUseFileIo() then return "" end
+if typeof(isfile) == "function" and not isfile(KEY_CACHE_FILE) then return "" end
+local ok, raw = pcall(readfile, KEY_CACHE_FILE)
+if not ok or not raw then return "" end
+local decOk, data = pcall(function()
+return HttpService:JSONDecode(raw)
+end)
+if decOk and type(data) == "table" and type(data.key) == "string" then
+return string.upper(string.gsub(data.key, "%s+", ""))
+end
+return ""
+end
+
+local function saveVerifiedKey(keyStr)
+if not canUseFileIo() then return end
+pcall(function()
+writefile(KEY_CACHE_FILE, HttpService:JSONEncode({ key = keyStr, savedAt = os.time() }))
+end)
+end
+
+local function getDeviceHwid()
+local ok, id = pcall(function()
+return RbxAnalyticsService:GetClientId()
+end)
+if ok and type(id) == "string" and #id > 0 then
+return id
+end
+return tostring(LocalPlayer.UserId) .. "-" .. tostring(game.PlaceId)
+end
+
+local function httpGetBody(url)
+if typeof(request) == "function" then
+local ok, res = pcall(request, { Url = url, Method = "GET" })
+if ok and type(res) == "table" and type(res.Body) == "string" and #res.Body > 0 then
+return true, res.Body
+end
+end
+if syn and type(syn.request) == "function" then
+local ok, res = pcall(syn.request, { Url = url, Method = "GET" })
+if ok and type(res) == "table" and type(res.Body) == "string" and #res.Body > 0 then
+return true, res.Body
+end
+end
+local okGet, body = pcall(function()
+return game:HttpGet(url)
+end)
+if okGet and type(body) == "string" and #body > 0 then
+return true, body
+end
+return false, "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ตรวจสอบ Key ได้"
+end
+
+local function verifyKeyRemote(rawKey)
+local cleanKey = string.upper(string.gsub(tostring(rawKey or ""), "%s+", ""))
+if #cleanKey < 4 then
+return false, "กรุณากรอก Key ก่อนใช้งาน", nil
+end
+local hwid = getDeviceHwid()
+local url = string.format(
+"%s/verify?key=%s&hwid=%s",
+KEY_API_URL,
+HttpService:UrlEncode(cleanKey),
+HttpService:UrlEncode(hwid)
+)
+local okHttp, body = httpGetBody(url)
+if not okHttp then
+return false, body, nil
+end
+local decOk, data = pcall(function()
+return HttpService:JSONDecode(body)
+end)
+if not decOk or type(data) ~= "table" then
+return false, "รูปแบบข้อมูลจากเซิร์ฟเวอร์ไม่ถูกต้อง", nil
+end
+if data.ok == true then
+return true, tostring(data.message or "ผ่านการตรวจสอบ"), data
+end
+return false, tostring(data.message or "Key ไม่ถูกต้องหรือหมดอายุ"), data
+end
+
+local function promptForValidKey(onAuthorized)
+local oldKeyGui = PlayerGui:FindFirstChild("TerUniversalHubKeyGui")
+if oldKeyGui then oldKeyGui:Destroy() end
+
+local keyGui = Instance.new("ScreenGui")
+keyGui.Name = "TerUniversalHubKeyGui"
+keyGui.ResetOnSpawn = false
+keyGui.DisplayOrder = 10000
+keyGui.Parent = PlayerGui
+
+local card = Instance.new("Frame")
+card.Size = UDim2.new(0, 340, 0, 210)
+card.Position = UDim2.new(0.5, -170, 0.5, -105)
+card.BackgroundColor3 = Color3.fromRGB(26, 10, 15)
+card.BorderSizePixel = 0
+card.Active = true
+card.Parent = keyGui
+Instance.new("UICorner", card).CornerRadius = UDim.new(0, 14)
+local cStroke = Instance.new("UIStroke", card)
+cStroke.Color = Color3.fromRGB(205, 35, 50)
+cStroke.Thickness = 2
+
+local topBar = Instance.new("Frame")
+topBar.Size = UDim2.new(1, 0, 0, 42)
+topBar.BackgroundColor3 = Color3.fromRGB(115, 15, 24)
+topBar.BorderSizePixel = 0
+topBar.Parent = card
+Instance.new("UICorner", topBar).CornerRadius = UDim.new(0, 14)
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, -24, 1, 0)
+title.Position = UDim2.new(0, 14, 0, 0)
+title.BackgroundTransparency = 1
+title.Text = "UNIVERSAL 3D HUB • KEY"
+title.TextColor3 = Color3.fromRGB(255, 240, 240)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Font = Enum.Font.GothamBlack
+title.TextSize = 14
+title.Parent = topBar
+
+local inputBox = Instance.new("TextBox")
+inputBox.Size = UDim2.new(1, -28, 0, 40)
+inputBox.Position = UDim2.new(0, 14, 0, 56)
+inputBox.BackgroundColor3 = Color3.fromRGB(42, 14, 20)
+inputBox.PlaceholderText = "กรอก Key เช่น TER-XXXX-XXXX-XXXX"
+inputBox.PlaceholderColor3 = Color3.fromRGB(175, 130, 135)
+inputBox.Text = loadSavedKey()
+inputBox.TextColor3 = Color3.fromRGB(255, 245, 245)
+inputBox.Font = Enum.Font.GothamBold
+inputBox.TextSize = 13
+inputBox.ClearTextOnFocus = false
+inputBox.Parent = card
+Instance.new("UICorner", inputBox).CornerRadius = UDim.new(0, 8)
+local boxStroke = Instance.new("UIStroke", inputBox)
+boxStroke.Color = Color3.fromRGB(140, 28, 40)
+boxStroke.Thickness = 1.3
+
+local statusLbl = Instance.new("TextLabel")
+statusLbl.Size = UDim2.new(1, -28, 0, 32)
+statusLbl.Position = UDim2.new(0, 14, 0, 102)
+statusLbl.BackgroundTransparency = 1
+statusLbl.Text = "กรุณากรอก Key เพื่อตรวจสอบสิทธิ์และผูกเครื่อง (HWID)"
+statusLbl.TextColor3 = Color3.fromRGB(230, 195, 195)
+statusLbl.TextWrapped = true
+statusLbl.Font = Enum.Font.GothamBold
+statusLbl.TextSize = 11
+statusLbl.Parent = card
+
+local submitBtn = Instance.new("TextButton")
+submitBtn.Size = UDim2.new(1, -28, 0, 42)
+submitBtn.Position = UDim2.new(0, 14, 0, 150)
+submitBtn.BackgroundColor3 = Color3.fromRGB(205, 28, 44)
+submitBtn.Text = "ยืนยัน Key"
+submitBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+submitBtn.Font = Enum.Font.GothamBlack
+submitBtn.TextSize = 13
+submitBtn.AutoButtonColor = false
+submitBtn.Parent = card
+Instance.new("UICorner", submitBtn).CornerRadius = UDim.new(0, 10)
+
+local busy = false
+local function attemptVerify(candidateKey)
+if busy then return end
+busy = true
+submitBtn.Text = "กำลังตรวจสอบ..."
+statusLbl.TextColor3 = Color3.fromRGB(255, 225, 130)
+statusLbl.Text = "กำลังตรวจสอบ Key กับเซิร์ฟเวอร์..."
+
+local clean = string.upper(string.gsub(tostring(candidateKey or ""), "%s+", ""))
+local ok, msg, info = verifyKeyRemote(clean)
+busy = false
+
+if ok then
+saveVerifiedKey(clean)
+local leftText = (info and info.hoursLeft) and (" (เหลือ ~" .. tostring(info.hoursLeft) .. " ชม.)") or ""
+statusLbl.TextColor3 = Color3.fromRGB(90, 255, 140)
+statusLbl.Text = "สำเร็จ: " .. msg .. leftText
+task.wait(0.35)
+if keyGui and keyGui.Parent then keyGui:Destroy() end
+onAuthorized()
+else
+submitBtn.Text = "ยืนยัน Key"
+statusLbl.TextColor3 = Color3.fromRGB(255, 95, 95)
+statusLbl.Text = msg
+end
+end
+
+submitBtn.MouseButton1Click:Connect(function()
+attemptVerify(inputBox.Text)
+end)
+
+inputBox.FocusLost:Connect(function(enterPressed)
+if enterPressed then
+attemptVerify(inputBox.Text)
+end
+end)
+
+local saved = loadSavedKey()
+if #saved >= 4 then
+task.spawn(attemptVerify, saved)
+end
+end
+
+local function startMainHub()
 if getgenv and getgenv().TerUniversalHubConnections then
 for _, conn in ipairs(getgenv().TerUniversalHubConnections) do
 pcall(function() conn:Disconnect() end)
@@ -72,10 +285,6 @@ if tonumber(profile.MaxLockDistance) then Hub.MaxLockDistance = tonumber(profile
 end
 
 applyPlaceDefaultProfile()
-
-local function canUseFileIo()
-return typeof(writefile) == "function" and typeof(readfile) == "function"
-end
 
 local function saveConfig()
 if not canUseFileIo() then return end
@@ -1616,3 +1825,6 @@ end)
 addActionButton("ปิดสคริปต์และลบ UI ออกจากเกม", "Unload", Color3.fromRGB(75, 10, 15), function()
 unloadHub()
 end)
+end
+
+promptForValidKey(startMainHub)
