@@ -325,8 +325,11 @@ Hub.CurrentTarget = nil
 Hub.TrackedModels = {}
 Hub.ActiveGuis = {}
 Hub.ActiveHighlights = {}
+Hub.ActiveBoxes = {}
 Hub.TrackedItems = {}
 Hub.ActiveItemGuis = {}
+Hub.DrawTags = {}
+Hub.LastEspCount = 0
 Hub.MaxLockDistance = 160
 Hub.MaxItemEspDistance = 120
 Hub.LockSmoothness = 0.24
@@ -409,6 +412,9 @@ return HttpService:JSONDecode(raw)
 end)
 if not decodedOk or type(data) ~= "table" then return end
 
+if type(data.NametagsEnabled) == "boolean" then Hub.NametagsEnabled = data.NametagsEnabled end
+if type(data.RedOutlineEnabled) == "boolean" then Hub.RedOutlineEnabled = data.RedOutlineEnabled end
+if type(data.ItemEspEnabled) == "boolean" then Hub.ItemEspEnabled = data.ItemEspEnabled end
 if type(data.LockBind) == "string" then Hub.LockBind = data.LockBind end
 if type(data.AimPartMode) == "string" then Hub.AimPartMode = data.AimPartMode end
 if type(data.TargetPriority) == "string" then Hub.TargetPriority = data.TargetPriority end
@@ -570,13 +576,112 @@ local hl = Hub.ActiveHighlights[model]
 if hl and hl.Parent then hl:Destroy() end
 Hub.ActiveHighlights[model] = nil
 
+local box = Hub.ActiveBoxes and Hub.ActiveBoxes[model]
+if box and box.Parent then box:Destroy() end
+if Hub.ActiveBoxes then Hub.ActiveBoxes[model] = nil end
+
+local drawn = Hub.DrawTags and Hub.DrawTags[model]
+if drawn then
+pcall(function() drawn.name:Remove() end)
+pcall(function() drawn.stats:Remove() end)
+Hub.DrawTags[model] = nil
+end
+
 Hub.TrackedModels[model] = nil
+end
+
+local function nameLooksLikeItem(name)
+local n = string.lower(tostring(name or ""))
+return string.find(n, "case", 1, true)
+or string.find(n, "gun", 1, true)
+or string.find(n, "weapon", 1, true)
+or string.find(n, "knife", 1, true)
+or string.find(n, "rifle", 1, true)
+or string.find(n, "sniper", 1, true)
+or string.find(n, "sword", 1, true)
+or string.find(n, "loot", 1, true)
+or string.find(n, "drop", 1, true)
+or string.find(n, "pickup", 1, true)
+or string.find(n, "crate", 1, true)
+or string.find(n, "pistol", 1, true)
+or string.find(n, "shotgun", 1, true)
+or string.find(n, "item", 1, true)
+end
+
+local function itemMaxStuds()
+local meters = tonumber(Hub.MaxItemEspDistance) or 120
+return math.clamp(meters / 0.28, 40, 8000)
+end
+
+local function getEspLayer()
+if Hub.EspLayer and Hub.EspLayer.Parent == PlayerGui then
+return Hub.EspLayer
+end
+if Hub.EspLayer then
+pcall(function() Hub.EspLayer:Destroy() end)
+end
+local layer = Instance.new("ScreenGui")
+layer.Name = "TerEspLayer"
+layer.ResetOnSpawn = false
+layer.IgnoreGuiInset = true
+layer.DisplayOrder = 50
+layer.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+layer.Parent = PlayerGui
+Hub.EspLayer = layer
+Hub.EspBin = layer
+return layer
+end
+
+local function getHighlightBin()
+local cam = workspace.CurrentCamera or Camera
+if Hub.HighlightBin and Hub.HighlightBin.Parent == cam then
+return Hub.HighlightBin
+end
+if Hub.HighlightBin then
+pcall(function() Hub.HighlightBin:Destroy() end)
+end
+local folder = Instance.new("Folder")
+folder.Name = "TerEspHighlights"
+folder.Parent = cam
+Hub.HighlightBin = folder
+return folder
+end
+
+local function ensureDrawTag(model)
+if Hub.DrawTags[model] then
+return Hub.DrawTags[model]
+end
+if typeof(Drawing) ~= "table" or typeof(Drawing.new) ~= "function" then
+return nil
+end
+local okName, nameDraw = pcall(Drawing.new, "Text")
+local okStats, statsDraw = pcall(Drawing.new, "Text")
+if not okName or not okStats or not nameDraw or not statsDraw then
+if nameDraw then pcall(function() nameDraw:Remove() end) end
+if statsDraw then pcall(function() statsDraw:Remove() end) end
+return nil
+end
+nameDraw.Size = 17
+nameDraw.Center = true
+nameDraw.Outline = true
+nameDraw.OutlineColor = Color3.new(0, 0, 0)
+nameDraw.Font = 2
+nameDraw.Visible = false
+statsDraw.Size = 14
+statsDraw.Center = true
+statsDraw.Outline = true
+statsDraw.OutlineColor = Color3.new(0, 0, 0)
+statsDraw.Color = Color3.fromRGB(255, 230, 140)
+statsDraw.Font = 2
+statsDraw.Visible = false
+Hub.DrawTags[model] = { name = nameDraw, stats = statsDraw }
+return Hub.DrawTags[model]
 end
 
 local function getItemDisplayPart(obj)
 if not obj or not obj.Parent or isIgnoredContainer(obj) then return nil end
 if LocalPlayer.Character and obj:IsDescendantOf(LocalPlayer.Character) then return nil end
-if obj:FindFirstChildOfClass("Humanoid") then return nil end
+if obj:FindFirstChildOfClass("Humanoid") or obj:FindFirstChildWhichIsA("Humanoid", true) then return nil end
 
 local hasInteract = obj:FindFirstChildOfClass("ClickDetector", true) ~= nil
 or obj:FindFirstChildOfClass("ProximityPrompt", true) ~= nil
@@ -586,14 +691,14 @@ local isItemFolder = false
 local cur = obj.Parent
 while cur and cur ~= workspace do
 local n = string.lower(cur.Name)
-if string.find(n, "item") or string.find(n, "drop") or string.find(n, "loot") or string.find(n, "pickup") or string.find(n, "weapon") or string.find(n, "gun") then
+if string.find(n, "item", 1, true) or string.find(n, "drop", 1, true) or string.find(n, "loot", 1, true) or string.find(n, "pickup", 1, true) or string.find(n, "weapon", 1, true) or string.find(n, "gun", 1, true) then
 isItemFolder = true
 break
 end
 cur = cur.Parent
 end
 
-if not hasInteract and not isItemFolder then
+if not hasInteract and not isItemFolder and not nameLooksLikeItem(obj.Name) then
 return nil
 end
 
@@ -623,6 +728,13 @@ if desc.Name == "MapItemTag" then
 pcall(function() desc:Destroy() end)
 end
 end
+if Hub.EspBin then
+for _, child in ipairs(Hub.EspBin:GetChildren()) do
+if child.Name == "MapItemTag" then
+pcall(function() child:Destroy() end)
+end
+end
+end
 end
 
 local function attachItemTag(obj)
@@ -641,8 +753,9 @@ billboard.Adornee = anchorPart
 billboard.Size = UDim2.new(0, 150, 0, 28)
 billboard.StudsOffset = Vector3.new(0, 1.8, 0)
 billboard.AlwaysOnTop = true
-billboard.MaxDistance = Hub.MaxItemEspDistance
-billboard.Parent = anchorPart
+billboard.LightInfluence = 0
+billboard.MaxDistance = itemMaxStuds()
+billboard.Parent = getEspLayer()
 
 local label = Instance.new("TextLabel")
 label.Name = "ItemName"
@@ -661,7 +774,7 @@ existingGui = billboard
 end
 
 existingGui.Adornee = anchorPart
-existingGui.MaxDistance = Hub.MaxItemEspDistance
+existingGui.MaxDistance = itemMaxStuds()
 existingGui.Enabled = Hub.ItemEspEnabled
 Hub.TrackedItems[obj] = true
 end
@@ -694,429 +807,68 @@ end
 end
 end
 
-local function clearAllEsp()
-for model in pairs(Hub.TrackedModels) do
-cleanupModel(model)
+local espEntries = {}
+
+local function removeEspFromModel(model)
+local entry = espEntries[model]
+if entry then
+if entry.highlight and entry.highlight.Parent then
+pcall(function() entry.highlight:Destroy() end)
 end
+if entry.billboard and entry.billboard.Parent then
+pcall(function() entry.billboard:Destroy() end)
+end
+espEntries[model] = nil
+end
+for _, child in ipairs(model:GetChildren()) do
+if child.Name == "TerHubEspHighlight" or child.Name == "TerHubEspBillboard" then
+pcall(function() child:Destroy() end)
+end
+end
+end
+
+local function clearAllEsp()
+for model in pairs(espEntries) do
+removeEspFromModel(model)
+end
+espEntries = {}
 for _, desc in ipairs(workspace:GetDescendants()) do
-if desc.Name == "EnemyRedOutline" or desc.Name == "MapNametag" then
+if desc.Name == "TerHubEspHighlight" or desc.Name == "TerHubEspBillboard" then
 pcall(function() desc:Destroy() end)
 end
 end
-clearAllItemEsp()
 end
 
-local function updateNametagStats(model, billboard, hum, rootPart)
-local nameLbl = billboard:FindFirstChild("PlayerName")
-if nameLbl then
-nameLbl.Visible = true
-end
-local statsLbl = billboard:FindFirstChild("StatsLine")
-if not statsLbl then return end
-statsLbl.Visible = true
-local hp = hum and math.max(0, math.floor(hum.Health)) or 100
-local maxHp = hum and math.max(1, math.floor(hum.MaxHealth)) or 100
-local distMeters = 0
-local myChar = LocalPlayer.Character
-local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Head"))
-if myRoot and rootPart then
-distMeters = math.floor((rootPart.Position - myRoot.Position).Magnitude * 0.28)
-end
-statsLbl.Text = string.format("[%d/%d HP | %dm]", hp, maxHp, distMeters)
+local function getEspAnchorPart(model)
+if not model then return nil end
+return model:FindFirstChild("Head")
+or model:FindFirstChild("HumanoidRootPart")
+or model:FindFirstChild("UpperTorso")
+or model:FindFirstChild("Torso")
+or model:FindFirstChildWhichIsA("BasePart", true)
 end
 
-	local function getEspTargetModels()
-local results = {}
+local function getEspTargets()
+local list = {}
 local seen = {}
 
-local function addTarget(m)
+local function tryAdd(m, labelOverride)
 if not m or not m:IsA("Model") or seen[m] then return end
 if isOwnCharacter(m) then return end
 local hum = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
-if not hum or hum.Health <= 0 then return end
+if hum and hum.Health <= 0 then return end
+local anchor = getEspAnchorPart(m)
+if not anchor then return end
 seen[m] = true
-table.insert(results, m)
+table.insert(list, { model = m, hum = hum, anchor = anchor, label = labelOverride or m.Name })
 end
 
 for _, plr in ipairs(Players:GetPlayers()) do
 if plr ~= LocalPlayer and plr.Character then
-addTarget(plr.Character)
-end
-end
-
-for _, child in ipairs(workspace:GetChildren()) do
-if child:IsA("Model") then
-addTarget(child)
-end
-end
-
-local worldFolder = workspace:FindFirstChild("World")
-if worldFolder then
-for _, desc in ipairs(worldFolder:GetDescendants()) do
-if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
-addTarget(desc.Parent)
-end
-end
-end
-
-for m in pairs(Hub.TrackedModels) do
-addTarget(m)
-end
-
-return results
-end
-
-	local function attachVisualsToModel(model)
-if not model or not model:IsA("Model") then return end
-if isOwnCharacter(model) or isIgnoredContainer(model) then return end
-
-local hum = model:FindFirstChildOfClass("Humanoid")
-local head = model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BasePart")
-local rootPart = model:FindFirstChild("HumanoidRootPart") or head
-if not hum or not head then return end
-
-local plr = getPlayerFromModel(model)
-local friendly = isTeammate(plr, model)
-
-local existingHl = Hub.ActiveHighlights[model]
-if friendly then
-if existingHl and existingHl.Parent then existingHl:Destroy() end
-Hub.ActiveHighlights[model] = nil
-else
-if not existingHl or not existingHl.Parent then
-local oldHl = model:FindFirstChild("EnemyRedOutline")
-if oldHl then oldHl:Destroy() end
-
-local hl = Instance.new("Highlight")
-hl.Name = "EnemyRedOutline"
-hl.Adornee = model
-hl.FillColor = Hub.EspColor
-hl.FillTransparency = 0.68
-hl.OutlineColor = Hub.EspColor
-hl.OutlineTransparency = 0
-hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-hl.Parent = model
-Hub.ActiveHighlights[model] = hl
-existingHl = hl
-end
-if existingHl.Adornee ~= model then
-existingHl.Adornee = model
-end
-existingHl.FillColor = Hub.EspColor
-existingHl.OutlineColor = Hub.EspColor
-existingHl.Enabled = Hub.RedOutlineEnabled
-end
-
-local existingGui = Hub.ActiveGuis[model]
-if not existingGui or not existingGui.Parent then
-local oldTag = head:FindFirstChild("MapNametag")
-if oldTag then oldTag:Destroy() end
-
-local billboard = Instance.new("BillboardGui")
-billboard.Name = "MapNametag"
-billboard.Adornee = head
-billboard.Size = UDim2.new(0, 185, 0, 46)
-billboard.StudsOffset = Vector3.new(0, 2.8, 0)
-billboard.AlwaysOnTop = true
-billboard.MaxDistance = 2500
-billboard.Parent = head
-
-local label = Instance.new("TextLabel")
-label.Name = "PlayerName"
-label.Size = UDim2.new(1, 0, 0.56, 0)
-label.Position = UDim2.new(0, 0, 0, 0)
-label.BackgroundTransparency = 1
-label.Text = plr and (plr.DisplayName .. " (@" .. plr.Name .. ")") or model.Name
-label.TextStrokeTransparency = 0.1
-label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-label.Font = Enum.Font.GothamBlack
-label.TextScaled = true
-label.Parent = billboard
-
-local statsLbl = Instance.new("TextLabel")
-statsLbl.Name = "StatsLine"
-statsLbl.Size = UDim2.new(1, 0, 0.42, 0)
-statsLbl.Position = UDim2.new(0, 0, 0.56, 0)
-statsLbl.BackgroundTransparency = 1
-statsLbl.Text = "[100/100 HP | 0m]"
-statsLbl.TextColor3 = Color3.fromRGB(255, 235, 160)
-statsLbl.TextStrokeTransparency = 0.2
-statsLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-statsLbl.Font = Enum.Font.GothamBold
-statsLbl.TextScaled = true
-statsLbl.Parent = billboard
-
-Hub.ActiveGuis[model] = billboard
-existingGui = billboard
-end
-
-if existingGui.Adornee ~= head then
-existingGui.Adornee = head
-end
-existingGui.Enabled = Hub.NametagsEnabled
-local lbl = existingGui:FindFirstChild("PlayerName")
-if lbl then
-lbl.TextColor3 = getTagColor(plr, model)
-end
-updateNametagStats(model, existingGui, hum, rootPart)
-
-Hub.TrackedModels[model] = true
-end
-
-local function refreshAllTracked()
-for model in pairs(Hub.TrackedModels) do
-if not model or not model.Parent or not model:FindFirstChildOfClass("Humanoid") then
-cleanupModel(model)
-else
-attachVisualsToModel(model)
-end
-end
-end
-
-local function scanInitialModels()
-for _, plr in ipairs(Players:GetPlayers()) do
-if plr ~= LocalPlayer and plr.Character then
-attachVisualsToModel(plr.Character)
-end
-end
-local worldFolder = workspace:FindFirstChild("World")
-if worldFolder then
-for _, desc in ipairs(worldFolder:GetDescendants()) do
-if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
-attachVisualsToModel(desc.Parent)
-end
-end
-end
-end
-
-function Hub.SetRedOutline(state)
-Hub.RedOutlineEnabled = state == true
-refreshAllTracked()
-saveConfig()
-end
-
-function Hub.SetNametags(state)
-Hub.NametagsEnabled = state == true
-refreshAllTracked()
-saveConfig()
-end
-
-function Hub.SetItemEsp(state)
-Hub.ItemEspEnabled = state == true
-scanMapItems()
-saveConfig()
-end
-
-function Hub.ResetEsp()
-clearAllEsp()
-scanInitialModels()
-clearAllEsp()
-end
-
-trackConn(RunService.Heartbeat:Connect(function()
-if not Hub.NametagsEnabled then return end
-for model, gui in pairs(Hub.ActiveGuis) do
-if model and model.Parent and gui and gui.Parent then
-local hum = model:FindFirstChildOfClass("Humanoid")
-local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
-updateNametagStats(model, gui, hum, root)
-end
-end
-end))
-
-trackConn(workspace.DescendantAdded:Connect(function(desc)
-if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
-task.defer(attachVisualsToModel, desc.Parent)
-elseif Hub.ItemEspEnabled then
-if desc:IsA("Tool") or desc:IsA("ClickDetector") or desc:IsA("ProximityPrompt") then
-local candidate = desc:IsA("Tool") and desc or desc.Parent
-if candidate then
-task.defer(attachItemTag, candidate)
-end
-elseif desc:IsA("Model") or desc:IsA("BasePart") then
-if getItemDisplayPart(desc) then
-task.defer(attachItemTag, desc)
-end
-end
-end
-end))
-
-trackConn(workspace.DescendantRemoving:Connect(function(desc)
-if desc:IsA("Model") and Hub.TrackedModels[desc] then
-cleanupModel(desc)
-elseif desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") and Hub.TrackedModels[desc.Parent] then
-cleanupModel(desc.Parent)
-elseif Hub.TrackedItems[desc] then
-cleanupItemEsp(desc)
-end
-end))
-
-for _, plr in ipairs(Players:GetPlayers()) do
-if plr ~= LocalPlayer then
-trackConn(plr.CharacterAdded:Connect(function(char)
-task.defer(attachVisualsToModel, char)
-end))
-trackConn(plr:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked))
-trackConn(plr:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked))
-trackConn(plr.AttributeChanged:Connect(refreshAllTracked))
-end
-end
-
-trackConn(Players.PlayerAdded:Connect(function(plr)
-if plr ~= LocalPlayer then
-trackConn(plr.CharacterAdded:Connect(function(char)
-task.defer(attachVisualsToModel, char)
-end))
-trackConn(plr:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked))
-trackConn(plr:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked))
-trackConn(plr.AttributeChanged:Connect(refreshAllTracked))
-end
-end))
-
-trackConn(LocalPlayer:GetPropertyChangedSignal("Team"):Connect(refreshAllTracked))
-trackConn(LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTracked))
-trackConn(LocalPlayer.AttributeChanged:Connect(refreshAllTracked))
-
-scanInitialModels()
-clearAllEsp()
-
-local lockConn = nil
-local lockStatusUpdater = nil
-local closeAllDropdowns = nil
-local updateLockIndicator = nil
-local isUnloading = false
-
-local function stopLockLoop()
-Hub.LockHolding = false
-Hub.CurrentTarget = nil
-if lockConn then
-lockConn:Disconnect()
-lockConn = nil
-end
-if lockStatusUpdater then
-lockStatusUpdater(false)
-end
-if updateLockIndicator then
-updateLockIndicator(nil)
-end
-end
-
-local function bindLocalCharacterSafety(char)
-if not char then return end
-stopLockLoop()
-local hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
-if hum then
-trackConn(hum.Died:Connect(stopLockLoop))
-end
-end
-
-if LocalPlayer.Character then
-task.spawn(bindLocalCharacterSafety, LocalPlayer.Character)
-end
-trackConn(LocalPlayer.CharacterAdded:Connect(function(char)
-task.spawn(bindLocalCharacterSafety, char)
-end))
-
-local function isDeadOrTempModel(model)
-if not model then return true end
-local n = string.lower(model.Name)
-if string.find(n, "_died") or string.find(n, "died") or string.find(n, "corpse") or string.find(n, "ragdoll") then
-return true
-end
-local full = model:GetFullName()
-if string.find(full, "Workspace%._Temp") or string.find(full, "Workspace%.Camera") then
-return true
-end
-return false
-end
-
-local function isAliveHumanoidModel(model)
-if not model or not model:IsA("Model") then return false end
-if isOwnCharacter(model) or isDeadOrTempModel(model) then return false end
-local hum = model:FindFirstChildOfClass("Humanoid") or model:FindFirstChildWhichIsA("Humanoid", true)
-if hum and hum.Health <= 0 then return false end
-return (model:FindFirstChild("Head", true) ~= nil) or (model:FindFirstChild("HumanoidRootPart", true) ~= nil) or (hum ~= nil)
-end
-
-local function getAimPartFromModel(model)
-if not isAliveHumanoidModel(model) then return nil end
-if Hub.AimPartMode == "HumanoidRootPart" then
-return model:FindFirstChild("HumanoidRootPart", true)
-or model:FindFirstChild("UpperTorso", true)
-or model:FindFirstChild("Torso", true)
-or model:FindFirstChild("Head", true)
-or model:FindFirstChildWhichIsA("BasePart", true)
-else
-return model:FindFirstChild("Head", true)
-or model:FindFirstChild("HeadHitbox", true)
-or model:FindFirstChild("FakeHead", true)
-or model:FindFirstChild("HumanoidRootPart", true)
-or model:FindFirstChildWhichIsA("BasePart", true)
-end
-end
-
-local function getScreenCenterDistance(worldPos)
-local screenPos, onScreen = Camera:WorldToViewportPoint(worldPos)
-if not onScreen or screenPos.Z <= 0 then return nil end
-local viewportSize = Camera.ViewportSize
-local center = Vector2.new(viewportSize.X * 0.5, viewportSize.Y * 0.5)
-local pt = Vector2.new(screenPos.X, screenPos.Y)
-return (pt - center).Magnitude
-end
-
-local function isWithinFov(worldPos)
-if not Hub.FovOnlyLock then return true end
-local centerDist = getScreenCenterDistance(worldPos)
-if not centerDist then return false end
-return centerDist <= Hub.FOVRadius
-end
-
-local function isVisibleFromCamera(targetModel, targetPos)
-if not Hub.WallCheckEnabled then return true end
-local origin = Camera.CFrame.Position
-local direction = targetPos - origin
-if direction.Magnitude <= 0.01 then return true end
-
-local params = RaycastParams.new()
-params.FilterType = Enum.RaycastFilterType.Exclude
-local ignoreList = { Camera }
-if LocalPlayer.Character then
-table.insert(ignoreList, LocalPlayer.Character)
-end
-params.FilterDescendantsInstances = ignoreList
-
-local result = workspace:Raycast(origin, direction, params)
-if not result then return true end
-if targetModel and result.Instance:IsDescendantOf(targetModel) then
-return true
-end
-return false
-end
-
-local function collectMapTargets()
-local results = {}
-local seen = {}
-
-local function tryAdd(m)
-if not m or not m:IsA("Model") or seen[m] then return end
-if isOwnCharacter(m) or isIgnoredContainer(m) then return end
-local hum = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
-if not hum or hum.Health <= 0 then return end
-local hasAnchor = m:FindFirstChild("Head", true) or m:FindFirstChild("HumanoidRootPart", true)
-if not hasAnchor then return end
-seen[m] = true
-table.insert(results, m)
-end
-
-for _, plr in ipairs(Players:GetPlayers()) do
-if plr ~= LocalPlayer and plr.Character then
-tryAdd(plr.Character)
-end
-end
-
-for _, child in ipairs(workspace:GetChildren()) do
-if child:IsA("Model") then
-tryAdd(child)
+local displayName = (plr.DisplayName and plr.DisplayName ~= "" and plr.DisplayName ~= plr.Name)
+and (plr.DisplayName .. " (@" .. plr.Name .. ")")
+or plr.Name
+tryAdd(plr.Character, displayName)
 end
 end
 
@@ -1126,19 +878,141 @@ for _, desc in ipairs(worldFolder:GetDescendants()) do
 if desc.Name == "Entities" then
 for _, ent in ipairs(desc:GetChildren()) do
 if ent:IsA("Model") then
-tryAdd(ent)
+tryAdd(ent, ent.Name)
 end
 end
 end
 end
 end
 
-for m in pairs(Hub.TrackedModels) do
-tryAdd(m)
+return list
 end
 
-return results
+local function buildEspVisuals(item)
+local model = item.model
+local anchor = item.anchor
+if not model or not model.Parent or not anchor or not anchor.Parent then return end
+
+removeEspFromModel(model)
+
+local hl = nil
+if Hub.RedOutlineEnabled then
+hl = Instance.new("Highlight")
+hl.Name = "TerHubEspHighlight"
+hl.Adornee = model
+hl.FillColor = Hub.EspColor
+hl.OutlineColor = Hub.EspColor
+hl.FillTransparency = 0.65
+hl.OutlineTransparency = 0
+hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+hl.Parent = model
 end
+
+local bb = nil
+if Hub.NametagsEnabled then
+bb = Instance.new("BillboardGui")
+bb.Name = "TerHubEspBillboard"
+bb.Adornee = anchor
+bb.Size = UDim2.new(0, 180, 0, 38)
+bb.StudsOffset = Vector3.new(0, 2.6, 0)
+bb.AlwaysOnTop = true
+bb.MaxDistance = 400
+bb.Parent = model
+
+local nameLbl = Instance.new("TextLabel")
+nameLbl.Name = "PlayerName"
+nameLbl.Size = UDim2.new(1, 0, 0, 18)
+nameLbl.Position = UDim2.new(0, 0, 0, 0)
+nameLbl.BackgroundTransparency = 1
+nameLbl.Text = item.label
+nameLbl.TextColor3 = Hub.EspColor
+nameLbl.TextStrokeTransparency = 0.2
+nameLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+nameLbl.Font = Enum.Font.GothamBold
+nameLbl.TextSize = 13
+nameLbl.Parent = bb
+
+local statsLbl = Instance.new("TextLabel")
+statsLbl.Name = "StatsLine"
+statsLbl.Size = UDim2.new(1, 0, 0, 18)
+statsLbl.Position = UDim2.new(0, 0, 0, 18)
+statsLbl.BackgroundTransparency = 1
+statsLbl.Text = "[100/100 HP | 0m]"
+statsLbl.TextColor3 = Color3.fromRGB(255, 235, 130)
+statsLbl.TextStrokeTransparency = 0.2
+statsLbl.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+statsLbl.Font = Enum.Font.GothamBold
+statsLbl.TextSize = 12
+statsLbl.Parent = bb
+end
+
+espEntries[model] = {
+highlight = hl,
+billboard = bb,
+hum = item.hum,
+anchor = anchor,
+label = item.label
+}
+end
+
+local function refreshAllTracked()
+local targets = getEspTargets()
+local activeSet = {}
+for _, item in ipairs(targets) do
+activeSet[item.model] = true
+buildEspVisuals(item)
+end
+for model in pairs(espEntries) do
+if not activeSet[model] or not model.Parent then
+removeEspFromModel(model)
+end
+end
+end
+
+local lastEspScan = 0
+RunService.Heartbeat:Connect(function()
+if not Hub.RedOutlineEnabled and not Hub.NametagsEnabled then
+return
+end
+local now = os.clock()
+if now - lastEspScan >= 1.2 then
+lastEspScan = now
+refreshAllTracked()
+end
+
+local myChar = LocalPlayer.Character
+local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Head"))
+
+for model, entry in pairs(espEntries) do
+if not model or not model.Parent or not entry.anchor or not entry.anchor.Parent then
+removeEspFromModel(model)
+else
+if entry.highlight then
+entry.highlight.Enabled = Hub.RedOutlineEnabled == true
+entry.highlight.FillColor = Hub.EspColor
+entry.highlight.OutlineColor = Hub.EspColor
+end
+if entry.billboard then
+entry.billboard.Enabled = Hub.NametagsEnabled == true
+local nameLbl = entry.billboard:FindFirstChild("PlayerName")
+if nameLbl then
+nameLbl.TextColor3 = Hub.EspColor
+end
+local statsLbl = entry.billboard:FindFirstChild("StatsLine")
+if statsLbl then
+local hum = entry.hum
+local hp = hum and math.max(0, math.floor(hum.Health)) or 100
+local maxHp = hum and math.max(1, math.floor(hum.MaxHealth)) or 100
+local distMeters = 0
+if myRoot then
+distMeters = math.floor((entry.anchor.Position - myRoot.Position).Magnitude * 0.28)
+end
+statsLbl.Text = string.format("[%d/%d HP | %dm]", hp, maxHp, distMeters)
+end
+end
+end
+end
+end)
 
 	local function collectCandidateModels()
 local list = {}
@@ -1661,6 +1535,18 @@ if isUnloading then return end
 isUnloading = true
 stopLockLoop()
 clearAllEsp()
+if Hub.EspLayer then
+pcall(function() Hub.EspLayer:Destroy() end)
+Hub.EspLayer = nil
+Hub.EspBin = nil
+elseif Hub.EspBin then
+pcall(function() Hub.EspBin:Destroy() end)
+Hub.EspBin = nil
+end
+if Hub.HighlightBin then
+pcall(function() Hub.HighlightBin:Destroy() end)
+Hub.HighlightBin = nil
+end
 for _, menu in ipairs(dropdownMenus) do
 if menu and menu.Parent then menu:Destroy() end
 end
