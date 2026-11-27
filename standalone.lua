@@ -16,11 +16,27 @@ local function attachGuiToTopLayer(guiObj)
 guiObj.ResetOnSpawn = false
 guiObj.DisplayOrder = 2147483647
 guiObj.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local mounted = false
+if typeof(gethui) == "function" then
+local okHost, host = pcall(gethui)
+if okHost and host then
+local okSet = pcall(function()
+guiObj.Parent = host
+end)
+if okSet and guiObj.Parent == host then
+mounted = true
+end
+end
+end
+
+if not mounted then
 local okCore = pcall(function()
 guiObj.Parent = CoreGui
 end)
 if not okCore or not guiObj.Parent then
 guiObj.Parent = PlayerGui
+end
 end
 end
 
