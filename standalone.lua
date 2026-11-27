@@ -958,26 +958,41 @@ trackConn(LocalPlayer.CharacterAdded:Connect(function(char)
 task.spawn(bindLocalCharacterSafety, char)
 end))
 
+local function isDeadOrTempModel(model)
+if not model then return true end
+local n = string.lower(model.Name)
+if string.find(n, "_died") or string.find(n, "died") or string.find(n, "corpse") or string.find(n, "ragdoll") then
+return true
+end
+local full = model:GetFullName()
+if string.find(full, "Workspace%._Temp") or string.find(full, "Workspace%.Camera") then
+return true
+end
+return false
+end
+
 local function isAliveHumanoidModel(model)
 if not model or not model:IsA("Model") then return false end
-if isOwnCharacter(model) or isIgnoredContainer(model) then return false end
-local hum = model:FindFirstChildOfClass("Humanoid")
+if isOwnCharacter(model) or isDeadOrTempModel(model) then return false end
+local hum = model:FindFirstChildOfClass("Humanoid") or model:FindFirstChildWhichIsA("Humanoid", true)
 if hum and hum.Health <= 0 then return false end
-return model:FindFirstChild("Head") ~= nil or model:FindFirstChild("HumanoidRootPart") ~= nil
+return (model:FindFirstChild("Head", true) ~= nil) or (model:FindFirstChild("HumanoidRootPart", true) ~= nil) or (hum ~= nil)
 end
 
 local function getAimPartFromModel(model)
 if not isAliveHumanoidModel(model) then return nil end
 if Hub.AimPartMode == "HumanoidRootPart" then
-return model:FindFirstChild("HumanoidRootPart")
-or model:FindFirstChild("UpperTorso")
-or model:FindFirstChild("Torso")
-or model:FindFirstChild("Head")
+return model:FindFirstChild("HumanoidRootPart", true)
+or model:FindFirstChild("UpperTorso", true)
+or model:FindFirstChild("Torso", true)
+or model:FindFirstChild("Head", true)
+or model:FindFirstChildWhichIsA("BasePart", true)
 else
-return model:FindFirstChild("Head")
-or model:FindFirstChild("HumanoidRootPart")
-or model:FindFirstChild("UpperTorso")
-or model:FindFirstChild("Torso")
+return model:FindFirstChild("Head", true)
+or model:FindFirstChild("HeadHitbox", true)
+or model:FindFirstChild("FakeHead", true)
+or model:FindFirstChild("HumanoidRootPart", true)
+or model:FindFirstChildWhichIsA("BasePart", true)
 end
 end
 
@@ -1009,10 +1024,6 @@ local ignoreList = { Camera }
 if LocalPlayer.Character then
 table.insert(ignoreList, LocalPlayer.Character)
 end
-for _, folderName in ipairs({ "WarzFx", "WarzRigPool", "HeroVisualsLocal", "ZombieVisuals", "ColoradoVehicleVisuals" }) do
-local f = workspace:FindFirstChild(folderName)
-if f then table.insert(ignoreList, f) end
-end
 params.FilterDescendantsInstances = ignoreList
 
 local result = workspace:Raycast(origin, direction, params)
@@ -1041,11 +1052,33 @@ if plr ~= LocalPlayer and plr.Character then
 addModel(plr.Character)
 end
 end
-for _, child in ipairs(workspace:GetChildren()) do
-if child:IsA("Model") then
-addModel(child)
+
+local highlightFolder = workspace:FindFirstChild("Highlight")
+if highlightFolder then
+for _, desc in ipairs(highlightFolder:GetDescendants()) do
+if desc:IsA("Model") then
+addModel(desc)
+elseif desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
+addModel(desc.Parent)
 end
 end
+end
+
+local worldFolder = workspace:FindFirstChild("World")
+if worldFolder then
+for _, desc in ipairs(worldFolder:GetDescendants()) do
+if desc.Name == "Entities" then
+for _, ent in ipairs(desc:GetChildren()) do
+if ent:IsA("Model") then
+addModel(ent)
+end
+end
+elseif desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
+addModel(desc.Parent)
+end
+end
+end
+
 for _, folderName in ipairs({ "Targets", "WarzDummies" }) do
 local folder = workspace:FindFirstChild(folderName)
 if folder then
@@ -1058,12 +1091,13 @@ end
 end
 end
 end
+
 return list
 end
 
 local function getNearestTarget()
 local char = LocalPlayer.Character
-local root = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head"))
+local root = char and (char:FindFirstChild("HumanoidRootPart", true) or char:FindFirstChild("Head", true))
 local originPos = root and root.Position or Camera.CFrame.Position
 
 local bestPart = nil
@@ -1144,9 +1178,9 @@ stopLockLoop()
 return
 end
 local char = LocalPlayer.Character
-local root = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head"))
+local root = char and (char:FindFirstChild("HumanoidRootPart", true) or char:FindFirstChild("Head", true))
 local cur = Hub.CurrentTarget
-local targetModel = cur and cur.Parent
+local targetModel = cur and cur:FindFirstAncestorOfClass("Model")
 local aimPart = getAimPartFromModel(targetModel)
 
 if not targetModel or not aimPart or not aimPart.Parent or not isWithinFov(aimPart.Position) or not isVisibleFromCamera(targetModel, aimPart.Position) then
