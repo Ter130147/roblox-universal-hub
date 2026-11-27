@@ -1205,6 +1205,85 @@ RunService:BindToRenderStep(LOCK_STEP_NAME, Enum.RenderPriority.Camera.Value + 2
 RunService:BindToRenderStep(LOCK_STEP_NAME .. "Post", Enum.RenderPriority.Last.Value, stepAimLock)
 end
 
+	local function safeCall(fn, ...)
+if type(fn) == "function" then
+return pcall(fn, ...)
+end
+return false
+end
+
+if type(clearAllEsp) ~= "function" then
+clearAllEsp = function()
+if type(espEntries) == "table" then
+for m, entry in pairs(espEntries) do
+if type(entry) == "table" then
+if entry.highlight then pcall(function() entry.highlight:Destroy() end) end
+if entry.billboard then pcall(function() entry.billboard:Destroy() end) end
+end
+espEntries[m] = nil
+end
+end
+for _, desc in ipairs(workspace:GetDescendants()) do
+if desc.Name == "TerHubEspHighlight" or desc.Name == "TerHubEspBillboard" or desc.Name == "MapNametag" or desc.Name == "RedOutline" then
+pcall(function() desc:Destroy() end)
+end
+end
+end
+end
+
+local function syncEspVisualsNow()
+if not Hub.RedOutlineEnabled and not Hub.NametagsEnabled then
+clearAllEsp()
+return
+end
+if type(refreshAllTracked) == "function" then
+pcall(refreshAllTracked)
+end
+local myChar = LocalPlayer.Character
+local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Head"))
+if type(espEntries) == "table" then
+for model, entry in pairs(espEntries) do
+if not model or not model.Parent then
+if type(removeEspFromModel) == "function" then pcall(removeEspFromModel, model) end
+elseif type(entry) == "table" then
+if entry.highlight then
+entry.highlight.Enabled = (Hub.RedOutlineEnabled == true)
+entry.highlight.FillColor = Hub.EspColor
+entry.highlight.OutlineColor = Hub.EspColor
+end
+if entry.billboard then
+entry.billboard.Enabled = (Hub.NametagsEnabled == true)
+local nameLbl = entry.billboard:FindFirstChild("PlayerName")
+if nameLbl then nameLbl.TextColor3 = Hub.EspColor end
+local statsLbl = entry.billboard:FindFirstChild("StatsLine")
+if statsLbl then
+local hum = entry.hum
+local hp = hum and math.max(0, math.floor(hum.Health)) or 100
+local maxHp = hum and math.max(1, math.floor(hum.MaxHealth)) or 100
+local distMeters = 0
+if myRoot and entry.anchor then
+distMeters = math.floor((entry.anchor.Position - myRoot.Position).Magnitude * 0.28)
+end
+statsLbl.Text = string.format("[%d/%d HP | %dm]", hp, maxHp, distMeters)
+end
+end
+end
+end
+end
+end
+
+Hub.SetRedOutline = function(enabled)
+Hub.RedOutlineEnabled = (enabled == true)
+syncEspVisualsNow()
+if type(saveConfig) == "function" then pcall(saveConfig) end
+end
+
+Hub.SetNametags = function(enabled)
+Hub.NametagsEnabled = (enabled == true)
+syncEspVisualsNow()
+if type(saveConfig) == "function" then pcall(saveConfig) end
+end
+
 	local function makeDraggable(dragHandle, targetFrame)
 local dragging = false
 local dragInput = nil
