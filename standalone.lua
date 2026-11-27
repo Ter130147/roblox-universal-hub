@@ -703,9 +703,24 @@ end
 statsLbl.Text = string.format("[%d/%d HP | %dm]", hp, maxHp, distMeters)
 end
 
-local function attachVisualsToModel(model)
+local function isDuplicateSubModel(model)
+if not model or not model:IsA("Model") then return false end
+if string.match(model.Name, "^%x+%-%x+%-%x+%-%x+%-%x+$") then
+return true
+end
+local anc = model.Parent
+while anc and anc ~= workspace do
+if anc:IsA("Model") and (anc:FindFirstChildOfClass("Humanoid") or Players:GetPlayerFromCharacter(anc)) then
+return true
+end
+anc = anc.Parent
+end
+return false
+end
+
+	local function attachVisualsToModel(model)
 if not model or not model:IsA("Model") then return end
-if isOwnCharacter(model) or isIgnoredContainer(model) then return end
+if isOwnCharacter(model) or isIgnoredContainer(model) or isDuplicateSubModel(model) then cleanupModel(model); return end
 
 local hum = model:FindFirstChildOfClass("Humanoid")
 local head = model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BasePart")
