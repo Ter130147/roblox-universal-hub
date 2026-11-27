@@ -1780,7 +1780,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(1, -66, 0, 18)
@@ -1863,7 +1863,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(0.65, -10, 0, 18)
@@ -1949,7 +1949,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(1, -134, 1, 0)
@@ -2028,7 +2028,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(0.55, -10, 1, 0)
@@ -2094,7 +2094,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(1, -104, 1, 0)
