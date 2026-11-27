@@ -2131,22 +2131,9 @@ addCapsuleToggle(espCard, "โครงศัตรู (Outline)", "เน้น
 Hub.SetRedOutline(enabled)
 espSub.Text = enabled and "สถานะ: เปิด ESP" or "สถานะ: ปิดบางส่วน"
 end)
-addCapsuleToggle(espCard, "แสดงชื่อ", "แสดงป้ายชื่อผู้เล่นหรือเป้าหมาย", Hub.ShowNameEnabled, 2, function(enabled)
-Hub.ShowNameEnabled = enabled
-refreshAllTracked()
-saveConfig()
-end)
-addCapsuleToggle(espCard, "แสดง HP", "แสดงพลังชีวิตของเป้าหมาย", Hub.ShowHpEnabled, 3, function(enabled)
-Hub.ShowHpEnabled = enabled
-refreshAllTracked()
-saveConfig()
-end)
-addCapsuleToggle(espCard, "แสดงระยะ", "แสดงระยะห่างจากตัวละครเป็นเมตร", Hub.ShowDistEnabled, 4, function(enabled)
-Hub.ShowDistEnabled = enabled
-refreshAllTracked()
-saveConfig()
-end)
-addCapsuleToggle(espCard, "แสดงชื่อไอเทมตามแมพ", "แสดงป้ายไอเทมและจุดเก็บในแมพ", Hub.ItemEspEnabled, 3, function(enabled)
+addCapsuleToggle(espCard, "แสดงชื่อ HP และระยะ", "แสดงป้ายชื่อ พลังชีวิต และระยะห่าง", Hub.NametagsEnabled, 2, function(enabled)
+Hub.SetNametags(enabled)
+end)addCapsuleToggle(espCard, "แสดงชื่อไอเทมตามแมพ", "แสดงป้ายไอเทมและจุดเก็บในแมพ", Hub.ItemEspEnabled, 3, function(enabled)
 Hub.SetItemEsp(enabled)
 end)
 addDropdown(espCard, "ItemDistRow", "ระยะแสดงชื่อไอเทม", ItemDistanceOptions, findOptionLabel(ItemDistanceOptions, Hub.MaxItemEspDistance, "120m"), 4, function(val)
