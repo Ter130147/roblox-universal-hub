@@ -1081,7 +1081,7 @@ end
 return list
 end
 
-local function getNearestTarget()
+local function (type(getNearestTarget) == "function" and getNearestTarget() or nil)
 local char = LocalPlayer.Character
 local root = char and (char:FindFirstChild("HumanoidRootPart", true) or char:FindFirstChild("Head", true))
 local originPos = root and root.Position or Camera.CFrame.Position
@@ -1139,7 +1139,7 @@ end
 end
 
 local function startLockHold()
-local target = getNearestTarget()
+local target = (type(getNearestTarget) == "function" and (type(getNearestTarget) == "function" and getNearestTarget() or nil)
 if not target then
 stopLockLoop()
 return
@@ -1170,7 +1170,7 @@ local targetModel = cur and cur:FindFirstAncestorOfClass("Model")
 local aimPart = getAimPartFromModel(targetModel)
 
 if not targetModel or not aimPart or not aimPart.Parent or not isWithinFov(aimPart.Position) or not isVisibleFromCamera(targetModel, aimPart.Position) then
-local nextTarget = getNearestTarget()
+local nextTarget = (type(getNearestTarget) == "function" and getNearestTarget() or nil)
 if nextTarget then
 Hub.CurrentTarget = nextTarget
 aimPart = nextTarget
@@ -1780,7 +1780,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(1, -66, 0, 18)
@@ -1863,7 +1863,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(0.65, -10, 0, 18)
@@ -1949,7 +1949,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(1, -134, 1, 0)
@@ -2028,7 +2028,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(0.55, -10, 1, 0)
@@ -2094,7 +2094,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(1, -104, 1, 0)
