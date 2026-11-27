@@ -958,23 +958,26 @@ trackConn(LocalPlayer.CharacterAdded:Connect(function(char)
 task.spawn(bindLocalCharacterSafety, char)
 end))
 
-local function getAimPartFromModel(model)
-if not model or isOwnCharacter(model) or isIgnoredContainer(model) then return nil end
+local function isAliveHumanoidModel(model)
+if not model or not model:IsA("Model") then return false end
+if isOwnCharacter(model) or isIgnoredContainer(model) then return false end
 local hum = model:FindFirstChildOfClass("Humanoid")
-if hum and hum.Health <= 0 then return nil end
+if hum and hum.Health <= 0 then return false end
+return model:FindFirstChild("Head") ~= nil or model:FindFirstChild("HumanoidRootPart") ~= nil
+end
 
+local function getAimPartFromModel(model)
+if not isAliveHumanoidModel(model) then return nil end
 if Hub.AimPartMode == "HumanoidRootPart" then
 return model:FindFirstChild("HumanoidRootPart")
 or model:FindFirstChild("UpperTorso")
 or model:FindFirstChild("Torso")
 or model:FindFirstChild("Head")
-or model:FindFirstChildWhichIsA("BasePart", true)
 else
 return model:FindFirstChild("Head")
 or model:FindFirstChild("HumanoidRootPart")
 or model:FindFirstChild("UpperTorso")
 or model:FindFirstChild("Torso")
-or model:FindFirstChildWhichIsA("BasePart", true)
 end
 end
 
@@ -1006,6 +1009,10 @@ local ignoreList = { Camera }
 if LocalPlayer.Character then
 table.insert(ignoreList, LocalPlayer.Character)
 end
+for _, folderName in ipairs({ "WarzFx", "WarzRigPool", "HeroVisualsLocal", "ZombieVisuals", "ColoradoVehicleVisuals" }) do
+local f = workspace:FindFirstChild(folderName)
+if f then table.insert(ignoreList, f) end
+end
 params.FilterDescendantsInstances = ignoreList
 
 local result = workspace:Raycast(origin, direction, params)
@@ -1020,7 +1027,7 @@ local function collectCandidateModels()
 local list = {}
 local seen = {}
 local function addModel(m)
-if m and m:IsA("Model") and not seen[m] and not isOwnCharacter(m) and not isIgnoredContainer(m) then
+if m and m:IsA("Model") and not seen[m] and isAliveHumanoidModel(m) then
 seen[m] = true
 table.insert(list, m)
 end
@@ -1034,7 +1041,12 @@ if plr ~= LocalPlayer and plr.Character then
 addModel(plr.Character)
 end
 end
-for _, folderName in ipairs({ "Targets", "WarzDummies", "ZombieVisuals" }) do
+for _, child in ipairs(workspace:GetChildren()) do
+if child:IsA("Model") then
+addModel(child)
+end
+end
+for _, folderName in ipairs({ "Targets", "WarzDummies" }) do
 local folder = workspace:FindFirstChild(folderName)
 if folder then
 for _, desc in ipairs(folder:GetDescendants()) do
@@ -1083,6 +1095,29 @@ end
 return bestPart
 end
 
+local LOCK_STEP_NAME = "TerUniversalHubHeadLockStep"
+
+local function stopLockLoop()
+Hub.LockHolding = false
+Hub.CurrentTarget = nil
+pcall(function()
+RunService:UnbindFromRenderStep(LOCK_STEP_NAME)
+end)
+pcall(function()
+RunService:UnbindFromRenderStep(LOCK_STEP_NAME .. "Post")
+end)
+if lockConn then
+lockConn:Disconnect()
+lockConn = nil
+end
+if lockStatusUpdater then
+lockStatusUpdater(false)
+end
+if updateLockIndicator then
+updateLockIndicator(nil)
+end
+end
+
 local function startLockHold()
 local target = getNearestTarget()
 if not target then
@@ -1096,12 +1131,14 @@ if lockStatusUpdater then
 lockStatusUpdater(true)
 end
 
-if lockConn then
-lockConn:Disconnect()
-lockConn = nil
-end
+pcall(function()
+RunService:UnbindFromRenderStep(LOCK_STEP_NAME)
+end)
+pcall(function()
+RunService:UnbindFromRenderStep(LOCK_STEP_NAME .. "Post")
+end)
 
-lockConn = trackConn(RunService.RenderStepped:Connect(function(dt)
+local function stepAimLock(dt)
 if not isBindCurrentlyHeld() then
 stopLockLoop()
 return
@@ -1136,17 +1173,22 @@ end
 
 local stepDt = math.clamp(tonumber(dt) or (1 / 60), 0.001, 0.05)
 local smoothFactor = math.clamp(tonumber(Hub.LockSmoothness) or 0.24, 0.05, 1)
-local alpha = (smoothFactor >= 0.99) and 1 or (1 - math.exp(-(smoothFactor * 45) * stepDt))
+local alpha = (smoothFactor >= 0.99) and 1 or (1 - math.exp(-(smoothFactor * 60) * stepDt))
 
 local camPos = Camera.CFrame.Position
-local targetLook = (aimPart.Position - camPos)
-if targetLook.Magnitude > 0.001 then
-local blendedDir = Camera.CFrame.LookVector:Lerp(targetLook.Unit, alpha)
-if blendedDir.Magnitude > 0.0001 then
-Camera.CFrame = CFrame.lookAt(camPos, camPos + blendedDir.Unit)
+local aimPos = aimPart.Position
+local delta = aimPos - camPos
+if delta.Magnitude > 0.001 then
+local desiredLook = delta.Unit
+local blendedLook = Camera.CFrame.LookVector:Lerp(desiredLook, alpha)
+if blendedLook.Magnitude > 0.0001 then
+Camera.CFrame = CFrame.lookAt(camPos, camPos + blendedLook.Unit)
 end
 end
-end))
+end
+
+RunService:BindToRenderStep(LOCK_STEP_NAME, Enum.RenderPriority.Camera.Value + 2, stepAimLock)
+RunService:BindToRenderStep(LOCK_STEP_NAME .. "Post", Enum.RenderPriority.Last.Value, stepAimLock)
 end
 
 	local function makeDraggable(dragHandle, targetFrame)
