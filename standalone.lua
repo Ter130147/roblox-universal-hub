@@ -2090,18 +2090,18 @@ local function addActionRow(parentCard, labelText, btnText, bgColor, orderIdx, c
 local row = Instance.new("Frame")
 row.Size = UDim2.new(1, 0, 0, 36)
 row.LayoutOrder = orderIdx or 1
-row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
+row.BackgroundColor3 = (function() if type(Color3.fromRGB) == "function" then return Color3.fromRGB(29, 29, 36) end end)()
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
+(function() if type(safeInvoke) == "function" then return safeInvoke(Instance.new, "UICorner", row) end end)().CornerRadius = (function() if type(UDim.new) == "function" then return UDim.new(0, 8) end end)()
 
-local lbl = Instance.new("TextLabel")
-lbl.Size = UDim2.new(1, -104, 1, 0)
-lbl.Position = UDim2.new(0, 10, 0, 0)
+local lbl = (function() if type(Instance.new) == "function" then return Instance.new("TextLabel") end end)()
+lbl.Size = (function() if type(UDim2.new) == "function" then return UDim2.new(1, -104, 1, 0) end end)()
+lbl.Position = (function() if type(UDim2.new) == "function" then return UDim2.new(0, 10, 0, 0) end end)()
 lbl.BackgroundTransparency = 1
 lbl.Text = labelText
-lbl.TextColor3 = Color3.fromRGB(240, 240, 248)
+lbl.TextColor3 = (function() if type(Color3.fromRGB) == "function" then return Color3.fromRGB(240, 240, 248) end end)()
 lbl.TextXAlignment = Enum.TextXAlignment.Left
 lbl.Font = Enum.Font.GothamBold
 lbl.TextSize = 12
