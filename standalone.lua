@@ -725,6 +725,47 @@ end
 statsLbl.Text = string.format("[%d/%d HP | %dm]", hp, maxHp, distMeters)
 end
 
+	local function getEspTargetModels()
+local results = {}
+local seen = {}
+
+local function addTarget(m)
+if not m or not m:IsA("Model") or seen[m] then return end
+if isOwnCharacter(m) then return end
+local hum = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
+if not hum or hum.Health <= 0 then return end
+seen[m] = true
+table.insert(results, m)
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do
+if plr ~= LocalPlayer and plr.Character then
+addTarget(plr.Character)
+end
+end
+
+for _, child in ipairs(workspace:GetChildren()) do
+if child:IsA("Model") then
+addTarget(child)
+end
+end
+
+local worldFolder = workspace:FindFirstChild("World")
+if worldFolder then
+for _, desc in ipairs(worldFolder:GetDescendants()) do
+if desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
+addTarget(desc.Parent)
+end
+end
+end
+
+for m in pairs(Hub.TrackedModels) do
+addTarget(m)
+end
+
+return results
+end
+
 	local function attachVisualsToModel(model)
 if not model or not model:IsA("Model") then return end
 if isOwnCharacter(model) or isIgnoredContainer(model) then return end
@@ -1157,7 +1198,7 @@ end
 end
 end
 
-return collectMapTargets()
+return list
 end
 
 local function getNearestTarget()
@@ -1168,7 +1209,7 @@ local originPos = root and root.Position or Camera.CFrame.Position
 local bestPart = nil
 local bestScore = math.huge
 
-for _, model in ipairs(collectCandidateModels()) do
+for _, model in ipairs(getEspTargetModels()) do
 if model and model.Parent then
 local plr = getPlayerFromModel(model)
 if not isTeammate(plr, model) then
