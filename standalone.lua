@@ -714,11 +714,11 @@ end
 local statsLbl = billboard:FindFirstChild("StatsLine")
 if not statsLbl then return end
 statsLbl.Visible = true
-local hp = hum and math.max(0, math.floor(hum.Health)) or 0
+local hp = hum and math.max(0, math.floor(hum.Health)) or 100
 local maxHp = hum and math.max(1, math.floor(hum.MaxHealth)) or 100
 local distMeters = 0
 local myChar = LocalPlayer.Character
-local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Head"))
 if myRoot and rootPart then
 distMeters = math.floor((rootPart.Position - myRoot.Position).Magnitude * 0.28)
 end
@@ -727,7 +727,7 @@ end
 
 	local function attachVisualsToModel(model)
 if not model or not model:IsA("Model") then return end
-if isOwnCharacter(model) or isIgnoredContainer(model) or isDuplicateSubModel(model) then cleanupModel(model); return end
+if isOwnCharacter(model) or isIgnoredContainer(model) then return end
 
 local hum = model:FindFirstChildOfClass("Humanoid")
 local head = model:FindFirstChild("Head") or model:FindFirstChildWhichIsA("BasePart")
