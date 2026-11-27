@@ -1625,7 +1625,15 @@ stopLockLoop()
 end
 end))
 
-makeDraggable(header, mainFrame)
+local GuiService = game:GetService("GuiService")
+trackConn(GuiService.MenuOpened:Connect(function()
+if closeAllDropdowns then closeAllDropdowns() end
+mainFrame.Visible = false
+end))
+trackConn(GuiService.MenuClosed:Connect(function()
+UserInputService.MouseIconEnabled = true
+end))
+	makeDraggable(header, mainFrame)
 makeDraggable(miniBtn, miniBtn)
 
 local function createCard(parentPage, cardTitle, subText, orderIndex)
