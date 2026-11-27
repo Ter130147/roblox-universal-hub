@@ -961,12 +961,20 @@ end))
 local function getAimPartFromModel(model)
 if not model or isOwnCharacter(model) or isIgnoredContainer(model) then return nil end
 local hum = model:FindFirstChildOfClass("Humanoid")
-if not hum or hum.Health <= 0 then return nil end
+if hum and hum.Health <= 0 then return nil end
 
 if Hub.AimPartMode == "HumanoidRootPart" then
-return model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
+return model:FindFirstChild("HumanoidRootPart")
+or model:FindFirstChild("UpperTorso")
+or model:FindFirstChild("Torso")
+or model:FindFirstChild("Head")
+or model:FindFirstChildWhichIsA("BasePart", true)
 else
-return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
+return model:FindFirstChild("Head")
+or model:FindFirstChild("HumanoidRootPart")
+or model:FindFirstChild("UpperTorso")
+or model:FindFirstChild("Torso")
+or model:FindFirstChildWhichIsA("BasePart", true)
 end
 end
 
@@ -998,13 +1006,6 @@ local ignoreList = { Camera }
 if LocalPlayer.Character then
 table.insert(ignoreList, LocalPlayer.Character)
 end
-local worldFolder = workspace:FindFirstChild("World")
-if worldFolder then
-local hlFolder = worldFolder:FindFirstChild("Highlight")
-if hlFolder then table.insert(ignoreList, hlFolder) end
-end
-local rootHighlight = workspace:FindFirstChild("Highlight")
-if rootHighlight then table.insert(ignoreList, rootHighlight) end
 params.FilterDescendantsInstances = ignoreList
 
 local result = workspace:Raycast(origin, direction, params)
@@ -1015,21 +1016,54 @@ end
 return false
 end
 
+local function collectCandidateModels()
+local list = {}
+local seen = {}
+local function addModel(m)
+if m and m:IsA("Model") and not seen[m] and not isOwnCharacter(m) and not isIgnoredContainer(m) then
+seen[m] = true
+table.insert(list, m)
+end
+end
+
+for m in pairs(Hub.TrackedModels) do
+addModel(m)
+end
+for _, plr in ipairs(Players:GetPlayers()) do
+if plr ~= LocalPlayer and plr.Character then
+addModel(plr.Character)
+end
+end
+for _, folderName in ipairs({ "Targets", "WarzDummies", "ZombieVisuals" }) do
+local folder = workspace:FindFirstChild(folderName)
+if folder then
+for _, desc in ipairs(folder:GetDescendants()) do
+if desc:IsA("Model") then
+addModel(desc)
+elseif desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
+addModel(desc.Parent)
+end
+end
+end
+end
+return list
+end
+
 local function getNearestTarget()
 local char = LocalPlayer.Character
-local root = char and char:FindFirstChild("HumanoidRootPart")
-if not root then return nil end
+local root = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head"))
+local originPos = root and root.Position or Camera.CFrame.Position
 
 local bestPart = nil
 local bestScore = math.huge
 
-for model in pairs(Hub.TrackedModels) do
-if model and model.Parent and not isOwnCharacter(model) and not isIgnoredContainer(model) then
+for _, model in ipairs(collectCandidateModels()) do
+if model and model.Parent then
 local plr = getPlayerFromModel(model)
 if not isTeammate(plr, model) then
 local aimPart = getAimPartFromModel(model)
-if aimPart and isWithinFov(aimPart.Position) and isVisibleFromCamera(model, aimPart.Position) then
-local worldDist = (aimPart.Position - root.Position).Magnitude
+if aimPart and aimPart:IsA("BasePart") and isWithinFov(aimPart.Position) and isVisibleFromCamera(model, aimPart.Position) then
+local worldDist = (aimPart.Position - originPos).Magnitude
 if worldDist <= Hub.MaxLockDistance then
 local score = worldDist
 if Hub.TargetPriority == "Crosshair" then
@@ -1050,7 +1084,6 @@ return bestPart
 end
 
 local function startLockHold()
-if not isBindCurrentlyHeld() then return end
 local target = getNearestTarget()
 if not target then
 stopLockLoop()
@@ -1074,12 +1107,12 @@ stopLockLoop()
 return
 end
 local char = LocalPlayer.Character
-local root = char and char:FindFirstChild("HumanoidRootPart")
+local root = char and (char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head"))
 local cur = Hub.CurrentTarget
 local targetModel = cur and cur.Parent
 local aimPart = getAimPartFromModel(targetModel)
 
-if not root or not targetModel or not aimPart or not isWithinFov(aimPart.Position) or not isVisibleFromCamera(targetModel, aimPart.Position) then
+if not targetModel or not aimPart or not aimPart.Parent or not isWithinFov(aimPart.Position) or not isVisibleFromCamera(targetModel, aimPart.Position) then
 local nextTarget = getNearestTarget()
 if nextTarget then
 Hub.CurrentTarget = nextTarget
@@ -1090,7 +1123,8 @@ return
 end
 end
 
-if (aimPart.Position - root.Position).Magnitude > Hub.MaxLockDistance then
+local originPos = root and root.Position or Camera.CFrame.Position
+if (aimPart.Position - originPos).Magnitude > Hub.MaxLockDistance then
 stopLockLoop()
 return
 end
@@ -1102,15 +1136,20 @@ end
 
 local stepDt = math.clamp(tonumber(dt) or (1 / 60), 0.001, 0.05)
 local smoothFactor = math.clamp(tonumber(Hub.LockSmoothness) or 0.24, 0.05, 1)
-local alpha = (smoothFactor >= 0.99) and 1 or (1 - math.exp(-(smoothFactor * 42) * stepDt))
+local alpha = (smoothFactor >= 0.99) and 1 or (1 - math.exp(-(smoothFactor * 45) * stepDt))
 
 local camPos = Camera.CFrame.Position
-local lookCFrame = CFrame.lookAt(camPos, aimPart.Position)
-Camera.CFrame = CFrame.new(camPos, Camera.CFrame.LookVector:Lerp(lookCFrame.LookVector, alpha) + camPos)
+local targetLook = (aimPart.Position - camPos)
+if targetLook.Magnitude > 0.001 then
+local blendedDir = Camera.CFrame.LookVector:Lerp(targetLook.Unit, alpha)
+if blendedDir.Magnitude > 0.0001 then
+Camera.CFrame = CFrame.lookAt(camPos, camPos + blendedDir.Unit)
+end
+end
 end))
 end
 
-local function makeDraggable(dragHandle, targetFrame)
+	local function makeDraggable(dragHandle, targetFrame)
 local dragging = false
 local dragInput = nil
 local dragStart = nil
