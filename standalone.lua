@@ -707,8 +707,13 @@ clearAllItemEsp()
 end
 
 local function updateNametagStats(model, billboard, hum, rootPart)
+local nameLbl = billboard:FindFirstChild("PlayerName")
+if nameLbl then
+nameLbl.Visible = true
+end
 local statsLbl = billboard:FindFirstChild("StatsLine")
 if not statsLbl then return end
+statsLbl.Visible = true
 local hp = hum and math.max(0, math.floor(hum.Health)) or 0
 local maxHp = hum and math.max(1, math.floor(hum.MaxHealth)) or 100
 local distMeters = 0
@@ -718,21 +723,6 @@ if myRoot and rootPart then
 distMeters = math.floor((rootPart.Position - myRoot.Position).Magnitude * 0.28)
 end
 statsLbl.Text = string.format("[%d/%d HP | %dm]", hp, maxHp, distMeters)
-end
-
-local function isDuplicateSubModel(model)
-if not model or not model:IsA("Model") then return false end
-if string.match(model.Name, "^%x+%-%x+%-%x+%-%x+%-%x+$") then
-return true
-end
-local anc = model.Parent
-while anc and anc ~= workspace do
-if anc:IsA("Model") and (anc:FindFirstChildOfClass("Humanoid") or Players:GetPlayerFromCharacter(anc)) then
-return true
-end
-anc = anc.Parent
-end
-return false
 end
 
 	local function attachVisualsToModel(model)
