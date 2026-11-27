@@ -1052,7 +1052,54 @@ end
 return false
 end
 
-local function collectCandidateModels()
+local function collectMapTargets()
+local results = {}
+local seen = {}
+
+local function tryAdd(m)
+if not m or not m:IsA("Model") or seen[m] then return end
+if isOwnCharacter(m) or isIgnoredContainer(m) then return end
+local hum = m:FindFirstChildOfClass("Humanoid") or m:FindFirstChildWhichIsA("Humanoid", true)
+if not hum or hum.Health <= 0 then return end
+local hasAnchor = m:FindFirstChild("Head", true) or m:FindFirstChild("HumanoidRootPart", true)
+if not hasAnchor then return end
+seen[m] = true
+table.insert(results, m)
+end
+
+for _, plr in ipairs(Players:GetPlayers()) do
+if plr ~= LocalPlayer and plr.Character then
+tryAdd(plr.Character)
+end
+end
+
+for _, child in ipairs(workspace:GetChildren()) do
+if child:IsA("Model") then
+tryAdd(child)
+end
+end
+
+local worldFolder = workspace:FindFirstChild("World")
+if worldFolder then
+for _, desc in ipairs(worldFolder:GetDescendants()) do
+if desc.Name == "Entities" then
+for _, ent in ipairs(desc:GetChildren()) do
+if ent:IsA("Model") then
+tryAdd(ent)
+end
+end
+end
+end
+end
+
+for m in pairs(Hub.TrackedModels) do
+tryAdd(m)
+end
+
+return results
+end
+
+	local function collectCandidateModels()
 local list = {}
 local seen = {}
 local function addModel(m)
@@ -1110,7 +1157,7 @@ end
 end
 end
 
-return list
+return collectMapTargets()
 end
 
 local function getNearestTarget()
