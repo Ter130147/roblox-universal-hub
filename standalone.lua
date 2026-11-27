@@ -4,6 +4,7 @@ return pcall(fn, ...)
 end
 return false
 end
+
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Teams = game:GetService("Teams")
@@ -11,11 +12,11 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RbxAnalyticsService = game:GetService("RbxAnalyticsService")
+local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
-
 local CoreGui = game:GetService("CoreGui")
 
 local function attachGuiToTopLayer(guiObj)
@@ -316,9 +317,6 @@ local PalettePresets = {
 
 local Hub = {}
 Hub.NametagsEnabled = false
-Hub.ShowNameEnabled = false
-Hub.ShowHpEnabled = false
-Hub.ShowDistEnabled = false
 Hub.RedOutlineEnabled = false
 Hub.ItemEspEnabled = false
 Hub.FovOnlyLock = false
@@ -386,9 +384,6 @@ local function saveConfig()
 if not canUseFileIo() then return end
 local payload = {
 NametagsEnabled = Hub.NametagsEnabled,
-ShowNameEnabled = Hub.ShowNameEnabled,
-ShowHpEnabled = Hub.ShowHpEnabled,
-ShowDistEnabled = Hub.ShowDistEnabled,
 RedOutlineEnabled = Hub.RedOutlineEnabled,
 ItemEspEnabled = Hub.ItemEspEnabled,
 FovOnlyLock = Hub.FovOnlyLock,
@@ -418,9 +413,6 @@ return HttpService:JSONDecode(raw)
 end)
 if not decodedOk or type(data) ~= "table" then return end
 
-if type(data.NametagsEnabled) == "boolean" then Hub.NametagsEnabled = data.NametagsEnabled end
-if type(data.RedOutlineEnabled) == "boolean" then Hub.RedOutlineEnabled = data.RedOutlineEnabled end
-if type(data.ItemEspEnabled) == "boolean" then Hub.ItemEspEnabled = data.ItemEspEnabled end
 if type(data.LockBind) == "string" then Hub.LockBind = data.LockBind end
 if type(data.AimPartMode) == "string" then Hub.AimPartMode = data.AimPartMode end
 if type(data.TargetPriority) == "string" then Hub.TargetPriority = data.TargetPriority end
@@ -566,36 +558,6 @@ end
 return false
 end
 
-local function getTagColor(player, model)
-if isTeammate(player, model) then
-return Color3.fromRGB(60, 255, 110)
-end
-return Hub.EspColor
-end
-
-local function cleanupModel(model)
-local gui = Hub.ActiveGuis[model]
-if gui and gui.Parent then gui:Destroy() end
-Hub.ActiveGuis[model] = nil
-
-local hl = Hub.ActiveHighlights[model]
-if hl and hl.Parent then hl:Destroy() end
-Hub.ActiveHighlights[model] = nil
-
-local box = Hub.ActiveBoxes and Hub.ActiveBoxes[model]
-if box and box.Parent then box:Destroy() end
-if Hub.ActiveBoxes then Hub.ActiveBoxes[model] = nil end
-
-local drawn = Hub.DrawTags and Hub.DrawTags[model]
-if drawn then
-pcall(function() drawn.name:Remove() end)
-pcall(function() drawn.stats:Remove() end)
-Hub.DrawTags[model] = nil
-end
-
-Hub.TrackedModels[model] = nil
-end
-
 local function nameLooksLikeItem(name)
 local n = string.lower(tostring(name or ""))
 return string.find(n, "case", 1, true)
@@ -636,52 +598,6 @@ layer.Parent = PlayerGui
 Hub.EspLayer = layer
 Hub.EspBin = layer
 return layer
-end
-
-local function getHighlightBin()
-local cam = workspace.CurrentCamera or Camera
-if Hub.HighlightBin and Hub.HighlightBin.Parent == cam then
-return Hub.HighlightBin
-end
-if Hub.HighlightBin then
-pcall(function() Hub.HighlightBin:Destroy() end)
-end
-local folder = Instance.new("Folder")
-folder.Name = "TerEspHighlights"
-folder.Parent = cam
-Hub.HighlightBin = folder
-return folder
-end
-
-local function ensureDrawTag(model)
-if Hub.DrawTags[model] then
-return Hub.DrawTags[model]
-end
-if typeof(Drawing) ~= "table" or typeof(Drawing.new) ~= "function" then
-return nil
-end
-local okName, nameDraw = pcall(Drawing.new, "Text")
-local okStats, statsDraw = pcall(Drawing.new, "Text")
-if not okName or not okStats or not nameDraw or not statsDraw then
-if nameDraw then pcall(function() nameDraw:Remove() end) end
-if statsDraw then pcall(function() statsDraw:Remove() end) end
-return nil
-end
-nameDraw.Size = 17
-nameDraw.Center = true
-nameDraw.Outline = true
-nameDraw.OutlineColor = Color3.new(0, 0, 0)
-nameDraw.Font = 2
-nameDraw.Visible = false
-statsDraw.Size = 14
-statsDraw.Center = true
-statsDraw.Outline = true
-statsDraw.OutlineColor = Color3.new(0, 0, 0)
-statsDraw.Color = Color3.fromRGB(255, 230, 140)
-statsDraw.Font = 2
-statsDraw.Visible = false
-Hub.DrawTags[model] = { name = nameDraw, stats = statsDraw }
-return Hub.DrawTags[model]
 end
 
 local function getItemDisplayPart(obj)
@@ -781,7 +697,7 @@ end
 
 existingGui.Adornee = anchorPart
 existingGui.MaxDistance = itemMaxStuds()
-existingGui.Enabled = Hub.ItemEspEnabled
+existingGui.Enabled = Hub.ItemEspEnabled == true
 Hub.TrackedItems[obj] = true
 end
 
@@ -826,9 +742,11 @@ pcall(function() entry.billboard:Destroy() end)
 end
 espEntries[model] = nil
 end
+if model then
 for _, child in ipairs(model:GetChildren()) do
 if child.Name == "TerHubEspHighlight" or child.Name == "TerHubEspBillboard" then
 pcall(function() child:Destroy() end)
+end
 end
 end
 end
@@ -839,7 +757,7 @@ removeEspFromModel(model)
 end
 espEntries = {}
 for _, desc in ipairs(workspace:GetDescendants()) do
-if desc.Name == "TerHubEspHighlight" or desc.Name == "TerHubEspBillboard" then
+if desc.Name == "TerHubEspHighlight" or desc.Name == "TerHubEspBillboard" or desc.Name == "MapNametag" or desc.Name == "RedOutline" then
 pcall(function() desc:Destroy() end)
 end
 end
@@ -962,6 +880,10 @@ label = item.label
 end
 
 local function refreshAllTracked()
+if not Hub.RedOutlineEnabled and not Hub.NametagsEnabled then
+clearAllEsp()
+return
+end
 local targets = getEspTargets()
 local activeSet = {}
 for _, item in ipairs(targets) do
@@ -975,8 +897,74 @@ end
 end
 end
 
+local function syncEspVisualsNow()
+if not Hub.RedOutlineEnabled and not Hub.NametagsEnabled then
+clearAllEsp()
+return
+end
+refreshAllTracked()
+local myChar = LocalPlayer.Character
+local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Head"))
+for model, entry in pairs(espEntries) do
+if not model or not model.Parent or not entry.anchor or not entry.anchor.Parent then
+removeEspFromModel(model)
+elseif type(entry) == "table" then
+if entry.highlight then
+entry.highlight.Enabled = (Hub.RedOutlineEnabled == true)
+entry.highlight.FillColor = Hub.EspColor
+entry.highlight.OutlineColor = Hub.EspColor
+end
+if entry.billboard then
+entry.billboard.Enabled = (Hub.NametagsEnabled == true)
+local nameLbl = entry.billboard:FindFirstChild("PlayerName")
+if nameLbl then nameLbl.TextColor3 = Hub.EspColor end
+local statsLbl = entry.billboard:FindFirstChild("StatsLine")
+if statsLbl then
+local hum = entry.hum
+local hp = hum and math.max(0, math.floor(hum.Health)) or 100
+local maxHp = hum and math.max(1, math.floor(hum.MaxHealth)) or 100
+local distMeters = 0
+if myRoot then
+distMeters = math.floor((entry.anchor.Position - myRoot.Position).Magnitude * 0.28)
+end
+statsLbl.Text = string.format("[%d/%d HP | %dm]", hp, maxHp, distMeters)
+end
+end
+end
+end
+end
+
+Hub.SetRedOutline = function(enabled)
+Hub.RedOutlineEnabled = (enabled == true)
+syncEspVisualsNow()
+saveConfig()
+end
+
+Hub.SetNametags = function(enabled)
+Hub.NametagsEnabled = (enabled == true)
+syncEspVisualsNow()
+saveConfig()
+end
+
+Hub.SetItemEsp = function(enabled)
+Hub.ItemEspEnabled = (enabled == true)
+scanMapItems()
+saveConfig()
+end
+
+Hub.ResetEsp = function()
+clearAllEsp()
+clearAllItemEsp()
+if Hub.RedOutlineEnabled or Hub.NametagsEnabled then
+refreshAllTracked()
+end
+if Hub.ItemEspEnabled then
+scanMapItems()
+end
+end
+
 local lastEspScan = 0
-RunService.Heartbeat:Connect(function()
+trackConn(RunService.Heartbeat:Connect(function()
 if not Hub.RedOutlineEnabled and not Hub.NametagsEnabled then
 return
 end
@@ -1018,67 +1006,45 @@ end
 end
 end
 end
-end)
+end))
 
-	local function collectCandidateModels()
-local list = {}
-local seen = {}
-local function addModel(m)
-if m and m:IsA("Model") and not seen[m] and isAliveHumanoidModel(m) then
-seen[m] = true
-table.insert(list, m)
-end
-end
-
-for m in pairs(Hub.TrackedModels) do
-addModel(m)
-end
-for _, plr in ipairs(Players:GetPlayers()) do
-if plr ~= LocalPlayer and plr.Character then
-addModel(plr.Character)
-end
+local function isWithinFov(worldPos)
+if not Hub.FovOnlyLock then return true end
+local vp, onScreen = Camera:WorldToViewportPoint(worldPos)
+if not onScreen or vp.Z <= 0 then return false end
+local center = Vector2.new(Camera.ViewportSize.X * 0.5, Camera.ViewportSize.Y * 0.5)
+local pt = Vector2.new(vp.X, vp.Y)
+return (pt - center).Magnitude <= (tonumber(Hub.FOVRadius) or 120)
 end
 
-local highlightFolder = workspace:FindFirstChild("Highlight")
-if highlightFolder then
-for _, desc in ipairs(highlightFolder:GetDescendants()) do
-if desc:IsA("Model") then
-addModel(desc)
-elseif desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
-addModel(desc.Parent)
-end
-end
+local function getScreenCenterDistance(worldPos)
+local vp, onScreen = Camera:WorldToViewportPoint(worldPos)
+if not onScreen or vp.Z <= 0 then return nil end
+local center = Vector2.new(Camera.ViewportSize.X * 0.5, Camera.ViewportSize.Y * 0.5)
+return (Vector2.new(vp.X, vp.Y) - center).Magnitude
 end
 
-local worldFolder = workspace:FindFirstChild("World")
-if worldFolder then
-for _, desc in ipairs(worldFolder:GetDescendants()) do
-if desc.Name == "Entities" then
-for _, ent in ipairs(desc:GetChildren()) do
-if ent:IsA("Model") then
-addModel(ent)
-end
-end
-elseif desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
-addModel(desc.Parent)
-end
-end
-end
-
-for _, folderName in ipairs({ "Targets", "WarzDummies" }) do
-local folder = workspace:FindFirstChild(folderName)
-if folder then
-for _, desc in ipairs(folder:GetDescendants()) do
-if desc:IsA("Model") then
-addModel(desc)
-elseif desc:IsA("Humanoid") and desc.Parent and desc.Parent:IsA("Model") then
-addModel(desc.Parent)
-end
-end
-end
+local function isVisibleFromCamera(model, worldPos)
+if not Hub.WallCheckEnabled then return true end
+local origin = Camera.CFrame.Position
+local dir = worldPos - origin
+if dir.Magnitude <= 0.01 then return true end
+local params = RaycastParams.new()
+params.FilterType = Enum.RaycastFilterType.Exclude
+local ignoreList = {}
+if LocalPlayer.Character then table.insert(ignoreList, LocalPlayer.Character) end
+params.FilterDescendantsInstances = ignoreList
+local res = workspace:Raycast(origin, dir, params)
+if not res then return true end
+return model and res.Instance and res.Instance:IsDescendantOf(model)
 end
 
-return list
+local function getAimPartFromModel(model)
+if not model or not model.Parent then return nil end
+if Hub.AimPartMode == "HumanoidRootPart" then
+return model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("Head")
+end
+return model:FindFirstChild("Head") or model:FindFirstChild("HumanoidRootPart")
 end
 
 local function getNearestTarget()
@@ -1089,7 +1055,8 @@ local originPos = root and root.Position or Camera.CFrame.Position
 local bestPart = nil
 local bestScore = math.huge
 
-for _, model in ipairs(getEspTargetModels()) do
+for _, item in ipairs(getEspTargets()) do
+local model = item.model
 if model and model.Parent then
 local plr = getPlayerFromModel(model)
 if not isTeammate(plr, model) then
@@ -1116,6 +1083,10 @@ return bestPart
 end
 
 local LOCK_STEP_NAME = "TerUniversalHubHeadLockStep"
+local lockConn = nil
+local lockStatusUpdater = nil
+local updateLockIndicator = nil
+local closeAllDropdowns = nil
 
 local function stopLockLoop()
 Hub.LockHolding = false
@@ -1211,86 +1182,7 @@ RunService:BindToRenderStep(LOCK_STEP_NAME, Enum.RenderPriority.Camera.Value + 2
 RunService:BindToRenderStep(LOCK_STEP_NAME .. "Post", Enum.RenderPriority.Last.Value, stepAimLock)
 end
 
-	local function safeCall(fn, ...)
-if type(fn) == "function" then
-return pcall(fn, ...)
-end
-return false
-end
-
-if type(clearAllEsp) ~= "function" then
-clearAllEsp = function()
-if type(espEntries) == "table" then
-for m, entry in pairs(espEntries) do
-if type(entry) == "table" then
-if entry.highlight then pcall(function() entry.highlight:Destroy() end) end
-if entry.billboard then pcall(function() entry.billboard:Destroy() end) end
-end
-espEntries[m] = nil
-end
-end
-for _, desc in ipairs(workspace:GetDescendants()) do
-if desc.Name == "TerHubEspHighlight" or desc.Name == "TerHubEspBillboard" or desc.Name == "MapNametag" or desc.Name == "RedOutline" then
-pcall(function() desc:Destroy() end)
-end
-end
-end
-end
-
-local function syncEspVisualsNow()
-if not Hub.RedOutlineEnabled and not Hub.NametagsEnabled then
-clearAllEsp()
-return
-end
-if type(refreshAllTracked) == "function" then
-pcall(refreshAllTracked)
-end
-local myChar = LocalPlayer.Character
-local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar:FindFirstChild("Head"))
-if type(espEntries) == "table" then
-for model, entry in pairs(espEntries) do
-if not model or not model.Parent then
-if type(removeEspFromModel) == "function" then pcall(removeEspFromModel, model) end
-elseif type(entry) == "table" then
-if entry.highlight then
-entry.highlight.Enabled = (Hub.RedOutlineEnabled == true)
-entry.highlight.FillColor = Hub.EspColor
-entry.highlight.OutlineColor = Hub.EspColor
-end
-if entry.billboard then
-entry.billboard.Enabled = (Hub.NametagsEnabled == true)
-local nameLbl = entry.billboard:FindFirstChild("PlayerName")
-if nameLbl then nameLbl.TextColor3 = Hub.EspColor end
-local statsLbl = entry.billboard:FindFirstChild("StatsLine")
-if statsLbl then
-local hum = entry.hum
-local hp = hum and math.max(0, math.floor(hum.Health)) or 100
-local maxHp = hum and math.max(1, math.floor(hum.MaxHealth)) or 100
-local distMeters = 0
-if myRoot and entry.anchor then
-distMeters = math.floor((entry.anchor.Position - myRoot.Position).Magnitude * 0.28)
-end
-statsLbl.Text = string.format("[%d/%d HP | %dm]", hp, maxHp, distMeters)
-end
-end
-end
-end
-end
-end
-
-Hub.SetRedOutline = function(enabled)
-Hub.RedOutlineEnabled = (enabled == true)
-syncEspVisualsNow()
-if type(saveConfig) == "function" then pcall(saveConfig) end
-end
-
-Hub.SetNametags = function(enabled)
-Hub.NametagsEnabled = (enabled == true)
-syncEspVisualsNow()
-if type(saveConfig) == "function" then pcall(saveConfig) end
-end
-
-	local function makeDraggable(dragHandle, targetFrame)
+local function makeDraggable(dragHandle, targetFrame)
 local dragging = false
 local dragInput = nil
 local dragStart = nil
@@ -1620,6 +1512,7 @@ if isUnloading then return end
 isUnloading = true
 stopLockLoop()
 clearAllEsp()
+clearAllItemEsp()
 if Hub.EspLayer then
 pcall(function() Hub.EspLayer:Destroy() end)
 Hub.EspLayer = nil
@@ -1627,10 +1520,6 @@ Hub.EspBin = nil
 elseif Hub.EspBin then
 pcall(function() Hub.EspBin:Destroy() end)
 Hub.EspBin = nil
-end
-if Hub.HighlightBin then
-pcall(function() Hub.HighlightBin:Destroy() end)
-Hub.HighlightBin = nil
 end
 for _, menu in ipairs(dropdownMenus) do
 if menu and menu.Parent then menu:Destroy() end
@@ -1671,7 +1560,6 @@ stopLockLoop()
 end
 end))
 
-local GuiService = game:GetService("GuiService")
 trackConn(GuiService.MenuOpened:Connect(function()
 if closeAllDropdowns then closeAllDropdowns() end
 mainFrame.Visible = false
@@ -1679,7 +1567,8 @@ end))
 trackConn(GuiService.MenuClosed:Connect(function()
 UserInputService.MouseIconEnabled = true
 end))
-	makeDraggable(header, mainFrame)
+
+makeDraggable(header, mainFrame)
 makeDraggable(miniBtn, miniBtn)
 
 local function createCard(parentPage, cardTitle, subText, orderIndex)
@@ -1780,7 +1669,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(1, -66, 0, 18)
@@ -1849,9 +1738,6 @@ if callback then callback(state) end
 end))
 
 applyState(false)
-if state and callback then
-task.spawn(callback, true)
-end
 end
 
 local function addSliderRow(parentCard, labelText, suffix, minVal, maxVal, currentVal, orderIdx, onChanged)
@@ -1863,7 +1749,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(0.65, -10, 0, 18)
@@ -1949,7 +1835,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(1, -134, 1, 0)
@@ -1983,10 +1869,10 @@ end
 end
 
 local ddBtn = Instance.new("TextButton")
-ddBtn.Size = UDim2.new(0, 114, 0, 24)
-ddBtn.Position = UDim2.new(1, -122, 0.5, -12)
+ddBtn.Size = UDim2.new(0, 126, 0, 24)
+ddBtn.Position = UDim2.new(1, -134, 0.5, -12)
 ddBtn.BackgroundColor3 = Color3.fromRGB(42, 42, 54)
-ddBtn.Text = defaultText .. " v"
+ddBtn.Text = defaultText .. " <>"
 ddBtn.TextColor3 = Color3.fromRGB(245, 245, 252)
 ddBtn.Font = Enum.Font.GothamBold
 ddBtn.TextSize = 11
@@ -2006,8 +1892,6 @@ break
 end
 end
 
-ddBtn.Size = UDim2.new(0, 126, 0, 24)
-ddBtn.Position = UDim2.new(1, -134, 0.5, -12)
 ddBtn.Text = options[currentIdx].label .. " <>"
 
 trackConn(ddBtn.MouseButton1Click:Connect(function()
@@ -2028,7 +1912,7 @@ row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-safeInvoke(Instance.new, "UICorner", row).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
 local lbl = Instance.new("TextLabel")
 lbl.Size = UDim2.new(0.55, -10, 1, 0)
@@ -2090,18 +1974,18 @@ local function addActionRow(parentCard, labelText, btnText, bgColor, orderIdx, c
 local row = Instance.new("Frame")
 row.Size = UDim2.new(1, 0, 0, 36)
 row.LayoutOrder = orderIdx or 1
-row.BackgroundColor3 = (function() if type(Color3.fromRGB) == "function" then return Color3.fromRGB(29, 29, 36) end end)()
+row.BackgroundColor3 = Color3.fromRGB(29, 29, 36)
 row.BorderSizePixel = 0
 row.ZIndex = 11
 row.Parent = parentCard
-(function() if type(safeInvoke) == "function" then return safeInvoke(Instance.new, "UICorner", row) end end)().CornerRadius = (function() if type(UDim.new) == "function" then return UDim.new(0, 8) end end)()
+Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
 
-local lbl = (function() if type(Instance.new) == "function" then return Instance.new("TextLabel") end end)()
-lbl.Size = (function() if type(UDim2.new) == "function" then return UDim2.new(1, -104, 1, 0) end end)()
-lbl.Position = (function() if type(UDim2.new) == "function" then return UDim2.new(0, 10, 0, 0) end end)()
+local lbl = Instance.new("TextLabel")
+lbl.Size = UDim2.new(1, -104, 1, 0)
+lbl.Position = UDim2.new(0, 10, 0, 0)
 lbl.BackgroundTransparency = 1
 lbl.Text = labelText
-lbl.TextColor3 = (function() if type(Color3.fromRGB) == "function" then return Color3.fromRGB(240, 240, 248) end end)()
+lbl.TextColor3 = Color3.fromRGB(240, 240, 248)
 lbl.TextXAlignment = Enum.TextXAlignment.Left
 lbl.Font = Enum.Font.GothamBold
 lbl.TextSize = 12
@@ -2175,14 +2059,16 @@ Hub.FovColor = col
 fovStroke.Color = col
 end)
 
-local espCard, espSub = createCard(espPage, "มองเห็น (ESP)", "สถานะ: แสดงผลตามแมพ", 1)
+local espCard, espSub = createCard(espPage, "มองเห็น (ESP)", "สถานะ: พร้อมใช้งาน", 1)
 addCapsuleToggle(espCard, "โครงศัตรู (Outline)", "เน้นกรอบตัวละครศัตรูทะลุกำแพง", Hub.RedOutlineEnabled, 1, function(enabled)
 Hub.SetRedOutline(enabled)
-espSub.Text = enabled and "สถานะ: เปิด ESP" or "สถานะ: ปิดบางส่วน"
+espSub.Text = (Hub.RedOutlineEnabled or Hub.NametagsEnabled) and "สถานะ: เปิด ESP" or "สถานะ: ปิดอยู่"
 end)
 addCapsuleToggle(espCard, "แสดงชื่อ HP และระยะ", "แสดงป้ายชื่อ พลังชีวิต และระยะห่าง", Hub.NametagsEnabled, 2, function(enabled)
 Hub.SetNametags(enabled)
-end)addCapsuleToggle(espCard, "แสดงชื่อไอเทมตามแมพ", "แสดงป้ายไอเทมและจุดเก็บในแมพ", Hub.ItemEspEnabled, 3, function(enabled)
+espSub.Text = (Hub.RedOutlineEnabled or Hub.NametagsEnabled) and "สถานะ: เปิด ESP" or "สถานะ: ปิดอยู่"
+end)
+addCapsuleToggle(espCard, "แสดงชื่อไอเทมตามแมพ", "แสดงป้ายไอเทมและจุดเก็บในแมพ", Hub.ItemEspEnabled, 3, function(enabled)
 Hub.SetItemEsp(enabled)
 end)
 addDropdown(espCard, "ItemDistRow", "ระยะแสดงชื่อไอเทม", ItemDistanceOptions, findOptionLabel(ItemDistanceOptions, Hub.MaxItemEspDistance, "120m"), 4, function(val)
@@ -2191,7 +2077,7 @@ scanMapItems()
 end)
 addColorRow(espCard, "สี ESP ศัตรู", Hub.EspColor, 5, function(col)
 Hub.EspColor = col
-refreshAllTracked()
+syncEspVisualsNow()
 end)
 addActionRow(espCard, "ล้างและสแกน ESP ใหม่", "รีเซ็ต ESP", Color3.fromRGB(205, 28, 44), 6, function()
 Hub.ResetEsp()
