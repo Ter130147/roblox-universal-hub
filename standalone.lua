@@ -1,3 +1,9 @@
+local function safeInvoke(fn, ...)
+if type(fn) == "function" then
+return pcall(fn, ...)
+end
+return false
+end
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Teams = game:GetService("Teams")
