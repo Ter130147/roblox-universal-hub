@@ -309,11 +309,11 @@ local PalettePresets = {
 }
 
 local Hub = {}
-Hub.NametagsEnabled = true
-Hub.ShowNameEnabled = true
-Hub.ShowHpEnabled = true
-Hub.ShowDistEnabled = true
-Hub.RedOutlineEnabled = true
+Hub.NametagsEnabled = false
+Hub.ShowNameEnabled = false
+Hub.ShowHpEnabled = false
+Hub.ShowDistEnabled = false
+Hub.RedOutlineEnabled = false
 Hub.ItemEspEnabled = false
 Hub.FovOnlyLock = false
 Hub.WallCheckEnabled = false
@@ -338,7 +338,7 @@ local CONFIG_FILE = "TerUniversalHub_Config.json"
 
 local PlaceProfiles = {
 [122446657157717] = {
-WallCheckEnabled = true,
+WallCheckEnabled = false,
 AimPartMode = "Head",
 TargetPriority = "Crosshair",
 MaxLockDistance = 200,
@@ -409,14 +409,6 @@ return HttpService:JSONDecode(raw)
 end)
 if not decodedOk or type(data) ~= "table" then return end
 
-if type(data.NametagsEnabled) == "boolean" then Hub.NametagsEnabled = data.NametagsEnabled end
-if type(data.ShowNameEnabled) == "boolean" then Hub.ShowNameEnabled = data.ShowNameEnabled end
-if type(data.ShowHpEnabled) == "boolean" then Hub.ShowHpEnabled = data.ShowHpEnabled end
-if type(data.ShowDistEnabled) == "boolean" then Hub.ShowDistEnabled = data.ShowDistEnabled end
-if type(data.RedOutlineEnabled) == "boolean" then Hub.RedOutlineEnabled = data.RedOutlineEnabled end
-if type(data.ItemEspEnabled) == "boolean" then Hub.ItemEspEnabled = data.ItemEspEnabled end
-if type(data.FovOnlyLock) == "boolean" then Hub.FovOnlyLock = data.FovOnlyLock end
-if type(data.WallCheckEnabled) == "boolean" then Hub.WallCheckEnabled = data.WallCheckEnabled end
 if type(data.LockBind) == "string" then Hub.LockBind = data.LockBind end
 if type(data.AimPartMode) == "string" then Hub.AimPartMode = data.AimPartMode end
 if type(data.TargetPriority) == "string" then Hub.TargetPriority = data.TargetPriority end
@@ -887,9 +879,7 @@ end
 function Hub.ResetEsp()
 clearAllEsp()
 scanInitialModels()
-if Hub.ItemEspEnabled then
-scanMapItems()
-end
+clearAllEsp()
 end
 
 trackConn(RunService.Heartbeat:Connect(function()
@@ -957,9 +947,7 @@ trackConn(LocalPlayer:GetPropertyChangedSignal("TeamColor"):Connect(refreshAllTr
 trackConn(LocalPlayer.AttributeChanged:Connect(refreshAllTracked))
 
 scanInitialModels()
-if Hub.ItemEspEnabled then
-scanMapItems()
-end
+clearAllEsp()
 
 local lockConn = nil
 local lockStatusUpdater = nil
