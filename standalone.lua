@@ -310,6 +310,9 @@ local PalettePresets = {
 
 local Hub = {}
 Hub.NametagsEnabled = true
+Hub.ShowNameEnabled = true
+Hub.ShowHpEnabled = true
+Hub.ShowDistEnabled = true
 Hub.RedOutlineEnabled = true
 Hub.ItemEspEnabled = false
 Hub.FovOnlyLock = false
@@ -374,6 +377,9 @@ local function saveConfig()
 if not canUseFileIo() then return end
 local payload = {
 NametagsEnabled = Hub.NametagsEnabled,
+ShowNameEnabled = Hub.ShowNameEnabled,
+ShowHpEnabled = Hub.ShowHpEnabled,
+ShowDistEnabled = Hub.ShowDistEnabled,
 RedOutlineEnabled = Hub.RedOutlineEnabled,
 ItemEspEnabled = Hub.ItemEspEnabled,
 FovOnlyLock = Hub.FovOnlyLock,
@@ -404,6 +410,9 @@ end)
 if not decodedOk or type(data) ~= "table" then return end
 
 if type(data.NametagsEnabled) == "boolean" then Hub.NametagsEnabled = data.NametagsEnabled end
+if type(data.ShowNameEnabled) == "boolean" then Hub.ShowNameEnabled = data.ShowNameEnabled end
+if type(data.ShowHpEnabled) == "boolean" then Hub.ShowHpEnabled = data.ShowHpEnabled end
+if type(data.ShowDistEnabled) == "boolean" then Hub.ShowDistEnabled = data.ShowDistEnabled end
 if type(data.RedOutlineEnabled) == "boolean" then Hub.RedOutlineEnabled = data.RedOutlineEnabled end
 if type(data.ItemEspEnabled) == "boolean" then Hub.ItemEspEnabled = data.ItemEspEnabled end
 if type(data.FovOnlyLock) == "boolean" then Hub.FovOnlyLock = data.FovOnlyLock end
